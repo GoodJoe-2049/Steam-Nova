@@ -17,7 +17,7 @@ internal object SteamChatNavigationScript {
                 var subscription=N.AppState.addEventListener('change',function(value){if(value==='active')env.start(account);else env.pause();});
                 return function(){subscription.remove();env.pause();};
             },[account]);
-            return null;
+            return R.createElement(chatVoiceUi(env).Global);
         }
         function ChatTab(props){
             var env=chatEnvironment(require),R=env.React,N=env.RN,ui=chatUi(require),chatState=env.useStore();

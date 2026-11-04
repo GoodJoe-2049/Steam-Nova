@@ -99,10 +99,11 @@ internal object SteamChatUiScript {
             var title=target.peer?peer.name:((room||{}).title||target.title||t('chat_group_conversation'));
             var status=state.typing[target.key]?t('chat_typing'):target.peer?(peer.game||''):(peer.name||'');
             return h(N.View,{style:{flex:1,backgroundColor:'#22252b'}},
-                h(layout.Header,{navigation:props.navigation,title:title,profile:peer,status:status,info:function(){closePopup();info[1](true);},
+                h(layout.Header,{target:target,navigation:props.navigation,title:title,profile:peer,status:status,voice:function(){closePopup();chatVoiceUi(env).start(target);},info:function(){closePopup();info[1](true);},
                     invite:function(){closePopup();N.Keyboard.dismiss();if(target.group)admin[1]('invite');else createGroup[1](true);}}),
                 h(layout.KeyboardViewport,null,
                 h(skin.Background),
+                h(chatVoiceUi(env).Bar,{target:target,avatar:skin.Avatar}),
                 state.error?h(Banner,{error:state.error,retry:env.refresh}):null,
                 error[0]?h(Banner,{error:error[0]}):null,data.error?h(Banner,{error:data.error,retry:function(){env.history(target,false);}}):null,
                 h(N.View,{style:{flex:1,overflow:'hidden'}},
@@ -131,7 +132,7 @@ internal object SteamChatUiScript {
                         h(Button,{title:busy[0]?String(progress[0])+'%':t('chat_send_attachment'),primary:true,disabled:busy[0],onPress:upload}),
                         h(Button,{title:t('chat_cancel'),disabled:busy[0],onPress:function(){attachment[1](null);}})),
                     h(actions.SwitchRow,{title:t('chat_mark_as_spoiler'),value:spoiler[0],disabled:busy[0],onChange:spoiler[1]})):null,
-                h(skin.Composer,{input:input,draft:draft[0],edit:edit,height:inputHeight[0],busy:busy[0],send:send,close:closePopup,pickerOpen:picker[0],attachOpen:attachMenu[0],
+                h(skin.Composer,{target:target,input:input,draft:draft[0],edit:edit,height:inputHeight[0],busy:busy[0],send:send,close:closePopup,pickerOpen:picker[0],attachOpen:attachMenu[0],
                     onLayout:function(e){composerHeight[1](e.nativeEvent.layout.height);},file:function(){pick('pickFile');},
                     resize:function(e){inputHeight[1](Math.max(52,Math.min(144,e.nativeEvent.contentSize.height)));},
                     attach:function(){if(input.current)input.current.blur();N.Keyboard.dismiss();picker[1](false);attachMenu[1](!attachMenu[0]);},

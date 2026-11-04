@@ -11,7 +11,7 @@ internal object SteamChatStoreScript {
         function roomEffect(message){if(message&&!message.deleted&&!message.pending&&!message.failed)effectListeners.slice().forEach(function(fn){try{fn(message);}catch(ignore){}});}
         function subscribeRoomEffects(fn){effectListeners.push(fn);return function(){effectListeners=effectListeners.filter(function(value){return value!==fn;});};}
         function fresh(id){return {account:id,sessions:[],groups:[],friends:null,catalog:null,preferences:{},background:{},self:null,profiles:{},nicknames:null,hydrated:false,groupsLoaded:false,refreshing:false,
-            threads:{},typing:{},openTarget:null,loading:false,error:'',groupsError:false,groupsLoading:false,connected:false,revision:0,syncRevision:0};}
+            threads:{},typing:{},voice:{phase:'idle'},openTarget:null,loading:false,error:'',groupsError:false,groupsLoading:false,connected:false,revision:0,syncRevision:0};}
         function emit(){state.revision++;listeners.slice().forEach(function(fn){fn(state.revision);});}
         function remember(value){if(value&&value.id)state.profiles[value.id]=Object.assign({},state.profiles[value.id]||{},value);}
         function profile(value,id){
@@ -36,7 +36,8 @@ internal object SteamChatStoreScript {
         function account(id){
             if(state.account===id)return;
             var old=state.account;Object.keys(saveTimers).forEach(function(k){clearTimeout(saveTimers[k]);});saveTimers={};
-            generation++;running=false;clearTimeout(pollTimer);pollTimer=null;refreshPromise=null;groupsPromise=null;state=fresh(id);emit();
+            generation++;running=false;clearTimeout(pollTimer);pollTimer=null;refreshPromise=null;groupsPromise=null;state=fresh(id);
+            if(chatEnvironments){chatEnvironments.voiceCurrent=state.voice;chatEnvironments.voiceExpanded=false;chatEnvironments.voiceThread='';}emit();
             if(old)request('pause',{},old).catch(function(){});
         }
         function thread(target){
@@ -113,6 +114,7 @@ internal object SteamChatStoreScript {
             request('events').then(function(events){
                 if(epoch!==generation)return;var resync=false;
                 events.forEach(function(e){
+                    if(e.type==='voice')applyVoice(e.value);
                     if(e.type==='message')onMessage(e.message);
                     if(e.type==='typing')state.typing[e.key]=Date.now()+6000;
                     if(e.type==='reaction')reaction(e);
@@ -183,9 +185,12 @@ internal object SteamChatStoreScript {
         }
         function typing(target){if(!target.peer||Date.now()-(typingSent[target.key]||0)<4000)return;typingSent[target.key]=Date.now();request('typing',target).catch(function(){});}
         function useStore(){var tick=React.useState(0)[1];React.useEffect(function(){listeners.push(tick);return function(){listeners=listeners.filter(function(fn){return fn!==tick;});};},[]);return state;}
+        function applyVoice(value){if(value&&Number(value.revision||0)>=Number(state.voice.revision||0)){state.voice=value;
+            (value.profiles||[]).forEach(remember);if(chatEnvironments)chatEnvironments.voiceCurrent=value;}}
+        function voiceUpdate(value){applyVoice(value);emit();}
         chatEnvironments={currentAccount:function(){return state.account;},React:React,RN:RN,require:require,useStore:useStore,request:request,start:start,pause:pause,visible:visible,
             reset:account,refresh:refresh,history:history,thread:thread,send:send,discard:discard,acknowledge:acknowledge,load:load,emit:emit,subscribeRoomEffects:subscribeRoomEffects,
-            preference:preference,saveThread:saveThread,editDraft:editDraft,typing:typing,targetFor:targetFor,profile:profile};return chatEnvironments;
+            preference:preference,saveThread:saveThread,editDraft:editDraft,typing:typing,targetFor:targetFor,profile:profile,voiceUpdate:voiceUpdate};return chatEnvironments;
     }
 """.trimIndent()
 }

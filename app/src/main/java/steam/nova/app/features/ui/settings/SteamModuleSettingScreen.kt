@@ -222,6 +222,7 @@ private fun GeneralPage(
     var builtInChatEnabled by remember { mutableStateOf(SteamModuleSettings.isBuiltInChatEnabled(context)) }
     var profileCustomizationEnabled by remember { mutableStateOf(SteamModuleSettings.isProfileCustomizationEnabled(context)) }
     var betterProfileEnabled by remember { mutableStateOf(SteamModuleSettings.isBetterProfileEnabled(context)) }
+    var animatedStoreBannerEnabled by remember { mutableStateOf(SteamModuleSettings.isAnimatedStoreBannerEnabled(context)) }
     var libraryPinchZoomEnabled by remember { mutableStateOf(SteamModuleSettings.isSteamLibraryPinchZoomEnabled(context)) }
     var showGlassDialog by rememberSaveable { mutableStateOf(false) }
     var glassHoldDown by rememberSaveable { mutableStateOf(false) }
@@ -289,6 +290,16 @@ private fun GeneralPage(
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
     ) {
+        SwitchPreference(
+            title = stringResource(R.string.module_animated_store_banner),
+            summary = stringResource(R.string.module_animated_store_banner_summary),
+            checked = animatedStoreBannerEnabled,
+            onCheckedChange = { enabled ->
+                SteamModuleSettings.setAnimatedStoreBannerEnabled(context, enabled)
+                animatedStoreBannerEnabled = enabled
+                Toast.makeText(context, restartMessage, Toast.LENGTH_SHORT).show()
+            },
+        )
         SwitchPreference(
             title = stringResource(R.string.module_better_profile),
             summary = stringResource(R.string.module_better_profile_summary),

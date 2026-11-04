@@ -11,8 +11,8 @@ android {
         applicationId = "steam.nova.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 42
-        versionName = "1.4.7"
+        versionCode = 45
+        versionName = "1.5.0"
 
         ndk {
             abiFilters += "arm64-v8a"

@@ -73,7 +73,7 @@ internal object SteamChatBridge {
     }
     // Slow HTTP/CM requests must not queue ahead of visibility changes or incoming events.
     private val localOperations = setOf("cache", "threadCache", "threadState", "preferences", "visibility", "events",
-        "backgroundStatus", "backgroundEnable", "backgroundDisable", "catalogCache", "discardPending", "uploadProgress", "pause")
+        "backgroundStatus", "backgroundEnable", "backgroundDisable", "catalogCache", "discardPending", "uploadProgress", "pause", "voice", "voiceState")
     private data class Picker(val account: String, val component: String, val complete: (JSONObject) -> Unit)
     private const val REQUEST = 0x6d43
 
@@ -255,13 +255,22 @@ internal object SteamChatBridge {
         if (lifecycleInstalled) return@synchronized
         val application = context.applicationContext as? Application ?: return@synchronized
         application.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
+            private val started = java.util.Collections.newSetFromMap(WeakHashMap<Activity, Boolean>())
             override fun onActivityResumed(activity: Activity) {
+                started.add(activity)
+                runtime?.voiceForeground(true)
                 watchNotificationIntent(module, activity)
             }
             override fun onActivityCreated(activity: Activity, state: Bundle?) = Unit
-            override fun onActivityStarted(activity: Activity) = Unit
+            override fun onActivityStarted(activity: Activity) {
+                started.add(activity)
+                runtime?.voiceForeground(true)
+            }
             override fun onActivityPaused(activity: Activity) = Unit
-            override fun onActivityStopped(activity: Activity) = Unit
+            override fun onActivityStopped(activity: Activity) {
+                started.remove(activity)
+                if (started.isEmpty()) runtime?.voiceForeground(false)
+            }
             override fun onActivitySaveInstanceState(activity: Activity, state: Bundle) = Unit
             override fun onActivityDestroyed(activity: Activity) = Unit
         })

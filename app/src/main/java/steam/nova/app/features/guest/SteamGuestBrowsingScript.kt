@@ -2,28 +2,34 @@ package steam.nova.app.features.guest
 
 import android.content.Context
 import steam.nova.app.core.ModuleScriptLocalization
+import steam.nova.app.core.SteamBundleCompatibility
 import steam.nova.app.features.steamguard.ui.SteamGuardNextCodeScript
 import steam.nova.app.features.library.SteamLibraryGridScript
 import steam.nova.app.features.chat.ui.SteamChatScript
 import steam.nova.app.features.profile.betterprofile.SteamBetterProfileScript
 import steam.nova.app.features.profile.customization.SteamProfileCustomizationAvatarScript
+import steam.nova.app.features.store.banner.SteamStoreBannerScript
 
 /** Small, bundle-specific adapters. Account state and the native login form remain Steam-owned. */
 internal object SteamGuestBrowsingScript {
     fun source(
         context: Context,
+        bundle: SteamBundleCompatibility.Profile,
         defaultRoute: String,
         nextCodeEnabled: Boolean,
         libraryPinchZoomEnabled: Boolean,
         chatBridgePrefix: String? = null,
         betterProfileEnabled: Boolean = false,
         profileCustomizationBridgePrefix: String? = null,
+        animatedStoreBannerEnabled: Boolean = false,
     ): String {
         return """
 (function(g) {
     'use strict';
     if (g.__millenniumGuestInstalled) return;
     g.__millenniumGuestInstalled = true;
+
+${bundle.source()}
 
 ${if (nextCodeEnabled || chatBridgePrefix != null) ModuleScriptLocalization.source(context) else ""}
 
@@ -161,7 +167,8 @@ ${if (profileCustomizationBridgePrefix != null) SteamProfileCustomizationAvatarS
 ${SteamGuardDefaultPageScript.source(defaultRoute)}
 ${if (nextCodeEnabled) SteamGuardNextCodeScript.source() else ""}
 ${if (libraryPinchZoomEnabled) SteamLibraryGridScript.source() else ""}
-${chatBridgePrefix?.let(SteamChatScript::source) ?: ""}
+${chatBridgePrefix?.let { SteamChatScript.source(context, it) } ?: ""}
+${if (animatedStoreBannerEnabled) SteamStoreBannerScript.source() else ""}
 
     var targets = { 1136: true, 1476: true, 2125: true, 2135: true, 2412: true, 2455: true };
     if ($nextCodeEnabled) targets[2413] = true;
@@ -169,41 +176,50 @@ ${chatBridgePrefix?.let(SteamChatScript::source) ?: ""}
     if (${chatBridgePrefix != null}) { targets[1892] = true; targets[2211] = true; }
     if (${betterProfileEnabled || profileCustomizationBridgePrefix != null}) { targets[2176] = true; targets[2210] = true; }
     if (${profileCustomizationBridgePrefix != null}) { targets[1864] = true; targets[1888] = true; }
-    var remaining = Object.keys(targets).length;
+    if ($animatedStoreBannerEnabled) targets[2176] = true;
+    // Only translate our adapter IDs. Steam's factories and dependency arrays
+    // continue to receive their own bundle's IDs, including numeric collisions.
+    var hostTargets = {};
+    Object.keys(targets).forEach(function(id) { hostTargets[steamModuleId(Number(id))] = Number(id); });
+    var remaining = Object.keys(hostTargets).length;
     var define;
     function wrapDefine(originalDefine) {
-        return function(factory, id, dependencies) {
-            if (!targets[id]) return originalDefine.apply(this, arguments);
-            delete targets[id];
+        return function(factory, hostId, dependencies) {
+            if (!Object.prototype.hasOwnProperty.call(hostTargets, hostId)) return originalDefine.apply(this, arguments);
+            var id = hostTargets[hostId];
+            delete hostTargets[hostId];
             var wrapped = function() {
                 var args = Array.prototype.slice.call(arguments);
-                var require = args[1];
+                var hostRequire = args[1];
+                function require(adapterId) { return hostRequire(steamModuleId(adapterId)); }
+                Object.assign(require, hostRequire);
                 var cache = {};
                 args[1] = function(dependency) {
                     if (Object.prototype.hasOwnProperty.call(cache, dependency)) return cache[dependency];
-                    var value = require(dependency);
-                    if (id === 1136 && dependency === 1366) value = guestNavigation(value, require);
-                    if (id === 1476 && dependency === 3459) value = guestHome(value, require);
-                    if (id === 2125 && dependency === 2126) value = guestSettingsQuery(value, require);
-                    if (id === 2412 && dependency === 1477) value = guardNavigator(value, require);
-                    if (id === 2413 && dependency === 263) value = guardNextCodeRuntime(value, require);
-                    if (id === 2455 && dependency === 2352) value = guestMenu(value, require);
-                    if ($libraryPinchZoomEnabled && id === 3466 && dependency === 263) value = libraryGridRuntime(value, require);
-                    if (${chatBridgePrefix != null} && dependency === 263 && (id === 1476 || id === 1892 || id === 2455)) value = chatNavigationRuntime(value, require, id);
-                    if (${chatBridgePrefix != null} && id === 2211 && dependency === 2212) value = chatStoreHeader(value, require);
-                    if (${betterProfileEnabled || profileCustomizationBridgePrefix != null} && id === 2176 && dependency === 263) value = betterProfileWebRuntime(value, require);
-                    if (${betterProfileEnabled || profileCustomizationBridgePrefix != null} && id === 2210 && dependency === 2212) value = betterProfileHeader(value, require);
-                    if (${profileCustomizationBridgePrefix != null} && id === 1888 && dependency === 1750) value = profileAvatarStaticImage(value, require);
+                    var value = hostRequire(dependency);
+                    if (id === 1136 && dependency === steamModuleId(1366)) value = guestNavigation(value, require);
+                    if (id === 1476 && dependency === steamModuleId(3459)) value = guestHome(value, require);
+                    if (id === 2125 && dependency === steamModuleId(2126)) value = guestSettingsQuery(value, require);
+                    if (id === 2412 && dependency === steamModuleId(1477)) value = guardNavigator(value, require);
+                    if (id === 2413 && dependency === steamModuleId(263)) value = guardNextCodeRuntime(value, require);
+                    if (id === 2455 && dependency === steamModuleId(2352)) value = guestMenu(value, require);
+                    if ($libraryPinchZoomEnabled && id === 3466 && dependency === steamModuleId(263)) value = libraryGridRuntime(value, require);
+                    if (${chatBridgePrefix != null} && dependency === steamModuleId(263) && (id === 1476 || id === 1892 || id === 2455)) value = chatNavigationRuntime(value, require, id);
+                    if (${chatBridgePrefix != null} && id === 2211 && dependency === steamModuleId(2212)) value = chatStoreHeader(value, require);
+                    if (${betterProfileEnabled || profileCustomizationBridgePrefix != null} && id === 2176 && dependency === steamModuleId(263)) value = betterProfileWebRuntime(value, require);
+                    if ($animatedStoreBannerEnabled && id === 2176 && dependency === steamModuleId(263)) value = storeBannerWebRuntime(value, require);
+                    if (${betterProfileEnabled || profileCustomizationBridgePrefix != null} && id === 2210 && dependency === steamModuleId(2212)) value = betterProfileHeader(value, require);
+                    if (${profileCustomizationBridgePrefix != null} && id === 1888 && dependency === steamModuleId(1750)) value = profileAvatarStaticImage(value, require);
                     cache[dependency] = value;
                     return value;
                 };
-                Object.assign(args[1], require);
+                Object.assign(args[1], hostRequire);
                 var result = factory.apply(this, args);
                 if (id === 2135) guestLinks(args[4].exports, require);
                 if (${profileCustomizationBridgePrefix != null} && id === 1864) profileAvatarPersona(args[4].exports, require);
                 return result;
             };
-            var result = originalDefine.call(this, wrapped, id, dependencies);
+            var result = originalDefine.call(this, wrapped, hostId, dependencies);
             if (--remaining === 0) {
                 // The adapters are now registered. All remaining Metro definitions are untouched.
                 Object.defineProperty(g, '__d', { value: originalDefine, writable: true, configurable: true });

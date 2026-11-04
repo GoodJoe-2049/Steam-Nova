@@ -19,6 +19,11 @@
 -keepnames class org.mozilla.javascript.Context
 -keepnames class org.mozilla.javascript.ContextFactory
 -keepnames interface org.mozilla.javascript.Function
+
+# The local voice media page calls this one annotated JavaScript bridge method.
+-keepclassmembers class steam.nova.app.features.chat.voice.SteamChatVoiceMedia$Bridge {
+    @android.webkit.JavascriptInterface <methods>;
+}
 -keepnames class org.mozilla.javascript.ScriptableObject
 
 # Context constructs the interpreter reflectively; RhinoException matches this stack frame.

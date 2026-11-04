@@ -3,6 +3,7 @@ package steam.nova.app.features.guest
 import android.content.Context
 import android.util.AtomicFile
 import android.util.Log
+import steam.nova.app.core.SteamBundleCompatibility
 import steam.nova.app.features.ui.settings.SteamModuleSettings
 import steam.nova.app.features.chat.bridge.SteamChatBridge
 import io.github.libxposed.api.XposedModule
@@ -44,6 +45,8 @@ internal class SteamGuestBrowsingFeature(
                 } else {
                     emit(Log.WARN, "Guest browsing unavailable for this bundle source; native navigation retained")
                 }
+            }.onFailure {
+                emit(Log.WARN, "Steam JS bootstrap failed: ${it.javaClass.simpleName}")
             }
             chain.proceed()
         }
@@ -65,19 +68,22 @@ internal class SteamGuestBrowsingFeature(
             }
         }
         val hash = digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
-        if (hash != SUPPORTED_BUNDLE) {
-            emit(Log.WARN, "Guest browsing unavailable for this Steam bundle; native navigation retained")
+        val bundle = SteamBundleCompatibility.find(hash)
+        if (bundle == null) {
+            emit(Log.WARN, "Steam JS bootstrap skipped: unsupported bundle sha256=$hash")
             return null
         }
         val file = File(app.codeCacheDir, "millennium-guest-bootstrap.js")
         val script = SteamGuestBrowsingScript.source(
             context = app,
+            bundle = bundle,
             defaultRoute = SteamModuleSettings.steamGuardDefaultPage(app).routeName,
             nextCodeEnabled = SteamModuleSettings.isSteamGuardNextCodeEnabled(app),
             profileCustomizationBridgePrefix = SteamProfileCustomizationBridge.prefix.takeIf {
                 SteamProfileCustomizationBridge.available && SteamModuleSettings.isProfileCustomizationEnabled(app)
             },
             betterProfileEnabled = SteamModuleSettings.isBetterProfileEnabled(app),
+            animatedStoreBannerEnabled = SteamModuleSettings.isAnimatedStoreBannerEnabled(app),
             libraryPinchZoomEnabled = SteamModuleSettings.isSteamLibraryPinchZoomEnabled(app),
             chatBridgePrefix = SteamChatBridge.prefix.takeIf { SteamChatBridge.available && SteamModuleSettings.isBuiltInChatEnabled(app) },
         )
@@ -94,11 +100,7 @@ internal class SteamGuestBrowsingFeature(
             }
         }
         bootstrap = file
+        emit(Log.INFO, "Steam JS bootstrap prepared: version=${bundle.version} sha256=$hash")
         return file
-    }
-
-    private companion object {
-        // Steam 3.10.11 (10928360), Hermes bytecode version 96.
-        const val SUPPORTED_BUNDLE = "f877cc35eff2a2a833c6330e8650b296369e2ccb4e07984ca6559b2daa4090a4"
     }
 }

@@ -10,6 +10,7 @@ import steam.nova.app.features.chat.data.SteamChatRepository
 import steam.nova.app.features.chat.diagnostics.SteamChatDiagnostics
 import steam.nova.app.features.chat.network.SteamChatAccount
 import steam.nova.app.features.chat.network.SteamChatFailure
+import steam.nova.app.features.chat.voice.SteamChatVoiceSession
 import steam.nova.app.features.ui.settings.SteamModuleSettings
 import org.json.JSONArray
 import org.json.JSONObject
@@ -40,7 +41,8 @@ internal class SteamChatRuntime(context: Context) {
                 runCatching { checkSession(this); handleEvent(this, event) }
                     .onFailure { if (session === this) SteamChatDiagnostics.failure("runtime.event", it) }
             }
-        })
+        }, { method, fields -> voice.event(method, fields) })
+        val voice = SteamChatVoiceSession(app, repo)
     }
 
     init {
@@ -109,6 +111,8 @@ internal class SteamChatRuntime(context: Context) {
         val disk = lease.disk
         val targetKey = args.optString("key")
         val result: Any = when (operation) {
+            "voice" -> lease.voice.command(args)
+            "voiceState" -> lease.voice.snapshot()
             "gameInfo" -> games.resolve(args.getString("appId"), args.optString("language"))
             "cache" -> disk.summary().put("background", notifications.status())
             "threadCache" -> disk.recover(SteamChatRepository.Target.parse(args).key)
@@ -121,6 +125,7 @@ internal class SteamChatRuntime(context: Context) {
                     if (requestEpoch > lease.visibilityEpoch || (requestEpoch == lease.visibilityEpoch && version >= lease.visibilityVersion)) {
                         lease.visibilityEpoch = requestEpoch; lease.visibilityVersion = version
                         lease.foreground = args.optBoolean("foreground", true); lease.visibleThread = args.optString("key")
+                        lease.voice.foreground(lease.foreground)
                         if (lease.foreground && lease.visibleThread.isNotBlank()) notifications.cancel(account.id, lease.visibleThread)
                     }
                 }
@@ -138,7 +143,7 @@ internal class SteamChatRuntime(context: Context) {
                     disk.saveSummary(disk.summary().put("groups", value))
                 }
             }
-            "events" -> repo.drain()
+            "events" -> repo.drain().put(JSONObject().put("type", "voice").put("value", lease.voice.snapshot()))
             "friends" -> repo.friends()
             "history" -> repo.history(args).also {
                 synchronized(lock) { checkSession(lease); disk.merge(SteamChatRepository.Target.parse(args).key, it.getJSONArray("messages"), it.getBoolean("more")) }
@@ -178,6 +183,7 @@ internal class SteamChatRuntime(context: Context) {
         val repo = lease.repo
         val disk = lease.disk
         val type = event.optString("type")
+        if (type == "disconnected") lease.voice.connectionLost()
         if (type == "reaction" || type == "modified") {
             val key = event.getString("key"); val messages = disk.thread(key).getJSONArray("messages")
             for (index in 0 until messages.length()) {
@@ -220,9 +226,12 @@ internal class SteamChatRuntime(context: Context) {
         clearSession()
     }
 
+    fun voiceForeground(value: Boolean) { session?.voice?.foreground(value) }
+
     private fun clearSession() {
         val old = session
         session = null
+        old?.voice?.close()
         old?.repo?.close()
         notifications.clear()
         if (old != null) SteamChatDiagnostics.info("runtime.session.closed")

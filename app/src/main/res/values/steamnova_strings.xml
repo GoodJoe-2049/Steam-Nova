@@ -391,7 +391,6 @@
     <string name="chat_view_steam_profile">"View Steam profile"</string>
     <string name="chat_view_store">"View store"</string>
     <string name="chat_voice_call">"Voice call"</string>
-    <string name="chat_voice_call_unavailable">"Voice calling is not supported yet."</string>
     <string name="guard_next_code_value">"Next: %1$s"</string>
     <plurals name="chat_channel_count">
         <item quantity="one">"%1$d channel"</item>
@@ -413,6 +412,8 @@
         <item>"Join"</item>
         <item>"Join game"</item>
     </string-array>
+    <string name="module_animated_store_banner">Animated Store Banner</string>
+    <string name="module_animated_store_banner_summary">Restore animations in homepage event banners</string>
     <string name="module_better_profile">Better Profile</string>
     <string name="module_better_profile_summary">Use the desktop showcase layout and add a left sidebar</string>
     <string name="profile_sidebar_title">Profile details</string>
@@ -448,4 +449,44 @@
     <string name="profile_custom_refresh">Refresh catalog</string>
     <string name="profile_custom_mini_preview">Mini profile preview</string>
     <string name="profile_custom_bundle_error">Could not load the complete profile bundle. Select it to retry.</string>
+
+    <!-- Steam voice calls -->
+    <string name="chat_voice_settings">Voice settings</string>
+    <string name="chat_voice_end_chat">End Voice Chat</string>
+    <string name="chat_voice_stop_talking">Stop Talking</string>
+    <string name="chat_voice_waiting_friend">Waiting for %1$s to join</string>
+    <string name="chat_voice_active_friend">Voice chatting with %1$s</string>
+    <string name="chat_voice_connecting">Connecting voice…</string>
+    <string name="chat_voice_ringing">Waiting for an answer…</string>
+    <string name="chat_voice_incoming">Incoming voice call</string>
+    <string name="chat_voice_connected">Voice connected</string>
+    <string name="chat_voice_reconnecting">Reconnecting voice…</string>
+    <string name="chat_voice_ended">Call ended</string>
+    <string name="chat_voice_idle">Voice chat</string>
+    <string name="chat_voice_busy">Leave the current call before starting another.</string>
+    <string name="chat_voice_permission_title">Microphone access</string>
+    <string name="chat_voice_permission_body">Allow Steam to use your microphone for voice calls.</string>
+    <string name="chat_voice_continue">Continue</string>
+    <string name="chat_voice_open_settings">Open settings</string>
+    <string name="chat_voice_mute">Mute microphone</string>
+    <string name="chat_voice_unmute">Unmute microphone</string>
+    <string name="chat_voice_audio_enable">Enable incoming audio</string>
+    <string name="chat_voice_audio_disable">Mute incoming audio</string>
+    <string name="chat_voice_leave">Leave voice chat</string>
+    <string name="chat_voice_collapse">Minimize call</string>
+    <string name="chat_voice_expand">Open voice chat</string>
+    <string name="chat_voice_accept">Accept</string>
+    <string name="chat_voice_decline">Decline</string>
+    <string name="chat_voice_route_auto">Use automatic audio routing</string>
+    <string name="chat_voice_route_speaker">Use speakerphone</string>
+    <string name="chat_voice_members">In this call</string>
+    <string name="chat_voice_foreground_hint">Keep Steam in the foreground during calls. Leaving Steam ends the call.</string>
+    <string name="chat_voice_error_permission">Microphone access is required. Enable it for Steam in system settings.</string>
+    <string name="chat_voice_error_media">The audio connection failed. Check the microphone and Android System WebView, then try again.</string>
+    <string name="chat_voice_error_timeout">The call timed out without connecting.</string>
+    <string name="chat_voice_error_disconnected">The voice connection was lost. Please call again.</string>
+    <string name="chat_voice_error_declined">The call was declined.</string>
+    <string name="chat_voice_error_interrupted">Another application interrupted the audio session.</string>
+    <string name="chat_voice_error_background">The call ended because Steam left the foreground.</string>
+    <string name="chat_voice_error_failed">Unable to complete the call. Check the connection and try again.</string>
 </resources>

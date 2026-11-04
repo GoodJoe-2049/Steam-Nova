@@ -58,16 +58,16 @@ internal object SteamChatThreadAppearanceScript {
                 frame?h(Image,{pointerEvents:'none',source:{uri:frame},autoplay:true,transition:0,style:{position:'absolute',left:0,top:0,width:size,height:size,transform:size>30?[]:[{scale:1.2}]}}):null,
                 size>30?h(N.View,{pointerEvents:'none',style:{position:'absolute',right:0,top:0,bottom:0,width:2,backgroundColor:p.game?'#90ba3c':p.online?'#6dcff6':'#898989',opacity:p.personaState===3||p.personaState===4?0.5:1}}):null);
         }
-        function Header(props){var insets=env.require(1486).useSafeAreaInsets(),p=props.profile||{},color=p.game?'#90ba3c':p.online?'#6dcff6':'#898989';
+        function Header(props){var state=env.useStore(),voice=chatVoiceUi(env),calling=voice.inThread(state.voice,props.target),insets=env.require(1486).useSafeAreaInsets(),p=props.profile||{},color=p.game?'#90ba3c':p.online?'#6dcff6':'#898989';
             return h(N.View,{style:{paddingTop:insets.top||0,backgroundColor:'#1c232c'}},
                 h(N.View,{style:{height:56,borderBottomWidth:1,borderBottomColor:'#363b43',flexDirection:'row',alignItems:'center',paddingLeft:14,paddingRight:4}},
                     h(N.View,{pointerEvents:'none',style:{position:'absolute',top:0,left:0,right:0,height:1,backgroundColor:'rgba(71,71,71,0.3)'}}),
                     h(N.Pressable,{onPress:props.info,onAccessibilityEscape:function(){props.navigation.goBack();},accessibilityRole:'button',
                         accessibilityLabel:t('chat_conversation_info'),style:{flex:1,minWidth:0,flexDirection:'row',alignItems:'center',minHeight:48}},
-                        h(Avatar,{profile:p,size:42}),h(N.View,{style:{flex:1,minWidth:0,marginLeft:12,opacity:p.online===false||p.personaState===3||p.personaState===4?0.5:1}},
+                        h(voice.HeaderIndicator,{target:props.target}),h(Avatar,{profile:p,size:42}),h(N.View,{style:{flex:1,minWidth:0,marginLeft:12,opacity:p.online===false||p.personaState===3||p.personaState===4?0.5:1}},
                             text(props.title,{color:color,fontWeight:'700'},{numberOfLines:1}),
                             props.status?text(props.status,{fontSize:12,lineHeight:16,color:color},{numberOfLines:1}):null)),
-                    h(IconButton,{name:'voice_call',title:t('chat_voice_call'),onPress:function(){N.Alert.alert(t('chat_voice_call'),t('chat_voice_call_unavailable'));}}),
+                    h(IconButton,{name:'voice_call',title:t(calling?'chat_voice_leave':'chat_voice_call'),color:calling?'#c8f1c2':undefined,onPress:props.voice}),
                     h(IconButton,{name:'invite_to_chat',title:t('chat_invite_to_chat'),onPress:props.invite})));
         }
         function Background(props){var size=R.useState({width:1,height:1}),w=size[0].width,ht=size[0].height,menu=props&&props.popup,id=menu?'chatPopupBackground':'chatHistoryBackground';
@@ -110,18 +110,19 @@ internal object SteamChatThreadAppearanceScript {
                 h(N.Pressable,{onLongPress:props.menu,delayLongPress:350,accessibilityLabel:t('chat_chat_message'),accessibilityActions:[{name:'activate',label:t('chat_message_actions')}],onAccessibilityAction:props.menu,
                     style:{paddingLeft:32,marginRight:14,paddingTop:first?10:7,paddingBottom:last?9:7,marginBottom:3}},props.children));
         }
-        function Composer(props){return h(N.View,{onLayout:props.onLayout,style:{backgroundColor:'#22252b',borderTopWidth:1,borderTopColor:'#15181c',paddingHorizontal:10,paddingVertical:8,flexDirection:'row',alignItems:'flex-end',
+        function Composer(props){var compact=N.useWindowDimensions().width<380,button=compact?42:48;return h(N.View,{onLayout:props.onLayout,style:{backgroundColor:'#22252b',borderTopWidth:1,borderTopColor:'#15181c',paddingHorizontal:compact?6:10,paddingVertical:8,flexDirection:'row',alignItems:'flex-end',
             boxShadow:Number(N.Platform.Version)>=28?[{offsetX:0,offsetY:-3,blurRadius:12,color:'rgba(0,0,0,0.1333)'}]:undefined}},
-            h(Shadow),h(IconButton,{name:'attachments',title:t('chat_send_special_content'),box:true,style:{marginRight:8,marginBottom:2},onPress:props.attach,onLongPress:props.file,disabled:props.busy,expanded:props.attachOpen}),
+            h(Shadow),h(IconButton,{name:'attachments',title:t('chat_send_special_content'),box:true,style:{width:button,marginRight:8,marginBottom:2},onPress:props.attach,onLongPress:props.file,disabled:props.busy,expanded:props.attachOpen}),
             h(N.View,{style:{flex:1,minWidth:0,flexDirection:'row',alignItems:'flex-end',backgroundColor:'#1b1c20',
                 boxShadow:Number(N.Platform.Version)>=29?[{inset:true,offsetX:0,offsetY:0,blurRadius:4,color:'#000000'}]:undefined}},
                 h(N.View,{style:{flex:1,minWidth:0,minHeight:52,maxHeight:144}},
                     h(N.TextInput,{ref:props.input,value:props.draft,onChangeText:props.edit,multiline:true,maxLength:2000,underlineColorAndroid:'transparent',
                         onFocus:props.close,onContentSizeChange:props.resize,accessibilityLabel:t('chat_message_input'),
                         style:{height:props.height,minHeight:52,maxHeight:144,fontFamily:(env.threadFonts||{}).regular||'sans-serif',fontSize:16,lineHeight:24,color:'#aaaaaa',
-                            paddingLeft:16,paddingRight:56,paddingVertical:14,includeFontPadding:false,textAlignVertical:'center'}}),
-                    h(IconButton,{name:'emoticons',title:t('chat_emotes'),expanded:props.pickerOpen,style:{position:'absolute',right:4,bottom:2},onPress:props.emotes})),
-                h(IconButton,{name:'send_message',title:t('chat_send'),send:true,box:true,style:{marginLeft:8,marginBottom:2},onPress:props.send,disabled:!props.draft.trim()||props.busy}),h(Shadow,{inset:true})));}
+                            paddingLeft:compact?8:16,paddingRight:compact?44:56,paddingVertical:14,includeFontPadding:false,textAlignVertical:'center'}}),
+                    h(IconButton,{name:'emoticons',title:t('chat_emotes'),expanded:props.pickerOpen,style:{position:'absolute',right:4,bottom:2,width:compact?40:48},onPress:props.emotes})),
+                h(IconButton,{name:'send_message',title:t('chat_send'),send:true,box:true,style:{width:button,marginLeft:8,marginBottom:2},onPress:props.send,disabled:!props.draft.trim()||props.busy}),h(Shadow,{inset:true})),
+            h(chatVoiceUi(env).Dock,{target:props.target}));}
         function Popover(props){var height=R.useState(1),opacity=R.useRef(new N.Animated.Value(0)).current;
             R.useEffect(function(){var live=true,animation;
                 function enter(reduced){if(!live)return;animation=N.Animated.timing(opacity,{toValue:1,duration:reduced?0:200,easing:N.Easing.bezier(0.25,0.1,0.25,1),useNativeDriver:true});animation.start();}
@@ -166,7 +167,7 @@ internal object SteamChatThreadAppearanceScript {
                 h(N.TextInput,{value:query[0],onChangeText:query[1],placeholder:t('chat_search'),accessibilityLabel:t('chat_search_items'),placeholderTextColor:'#7e8794',underlineColorAndroid:'transparent',
                     style:{height:56,minHeight:56,padding:16,fontSize:16,lineHeight:24,color:'#dfe3e6',backgroundColor:'#2b2c2f',fontFamily:(env.threadFonts||{}).regular||'sans-serif',includeFontPadding:false}}));
         }
-        env.threadAppearance={text:text,useFonts:useFonts,Icon:Icon,Header:Header,Background:Background,Message:Message,DateDivider:DateDivider,dayKey:dayKey,sameRun:sameRun,
+        env.threadAppearance={text:text,useFonts:useFonts,Icon:Icon,Avatar:Avatar,Header:Header,Background:Background,Message:Message,DateDivider:DateDivider,dayKey:dayKey,sameRun:sameRun,
             Composer:Composer,Popover:Popover,AttachmentMenu:AttachmentMenu,Catalog:Catalog};return env.threadAppearance;
     }
 """.trimIndent()

@@ -381,7 +381,6 @@
     <string name="chat_view_steam_profile">"查看 Steam 个人资料"</string>
     <string name="chat_view_store">"查看商店"</string>
     <string name="chat_voice_call">"语音通话"</string>
-    <string name="chat_voice_call_unavailable">"暂不支持语音通话"</string>
     <string name="guard_next_code_value">"下一个：%1$s"</string>
     <plurals name="chat_channel_count">
         <item quantity="other">"%1$d 个频道"</item>
@@ -402,6 +401,8 @@
         <item>"加入游戏"</item>
         <item>"加入游戏"</item>
     </string-array>
+    <string name="module_animated_store_banner">商店动态横幅</string>
+    <string name="module_animated_store_banner_summary">恢复首页活动横幅的动画</string>
     <string name="module_better_profile">更好的个人资料</string>
     <string name="module_better_profile_summary">采用桌面端展示柜排版并增加左侧栏</string>
     <string name="profile_sidebar_title">个人资料详情</string>
@@ -437,4 +438,44 @@
     <string name="profile_custom_refresh">刷新目录</string>
     <string name="profile_custom_mini_preview">迷你资料预览</string>
     <string name="profile_custom_bundle_error">未能读取完整的资料套装，请重新选择以重试。</string>
+
+    <!-- Steam voice calls -->
+    <string name="chat_voice_settings">语音设置</string>
+    <string name="chat_voice_end_chat">结束语音聊天</string>
+    <string name="chat_voice_stop_talking">停止说话</string>
+    <string name="chat_voice_waiting_friend">等待 %1$s 加入</string>
+    <string name="chat_voice_active_friend">正在和 %1$s 语音聊天</string>
+    <string name="chat_voice_connecting">正在连接语音…</string>
+    <string name="chat_voice_ringing">等待对方接听…</string>
+    <string name="chat_voice_incoming">收到语音来电</string>
+    <string name="chat_voice_connected">语音已连接</string>
+    <string name="chat_voice_reconnecting">正在恢复语音连接…</string>
+    <string name="chat_voice_ended">通话已结束</string>
+    <string name="chat_voice_idle">语音通话</string>
+    <string name="chat_voice_busy">请先结束当前通话，再开始新的通话。</string>
+    <string name="chat_voice_permission_title">麦克风权限</string>
+    <string name="chat_voice_permission_body">允许 Steam 使用麦克风进行语音通话。</string>
+    <string name="chat_voice_continue">继续</string>
+    <string name="chat_voice_open_settings">打开设置</string>
+    <string name="chat_voice_mute">关闭麦克风</string>
+    <string name="chat_voice_unmute">开启麦克风</string>
+    <string name="chat_voice_audio_enable">开启通话声音</string>
+    <string name="chat_voice_audio_disable">关闭通话声音</string>
+    <string name="chat_voice_leave">离开语音通话</string>
+    <string name="chat_voice_collapse">收起通话面板</string>
+    <string name="chat_voice_expand">打开语音聊天</string>
+    <string name="chat_voice_accept">接听</string>
+    <string name="chat_voice_decline">拒接</string>
+    <string name="chat_voice_route_auto">使用自动音频输出</string>
+    <string name="chat_voice_route_speaker">使用扬声器</string>
+    <string name="chat_voice_members">通话成员</string>
+    <string name="chat_voice_foreground_hint">通话期间请保持 Steam 在前台，切到后台会结束通话。</string>
+    <string name="chat_voice_error_permission">需要麦克风权限，请在系统设置中允许 Steam 使用麦克风。</string>
+    <string name="chat_voice_error_media">音频连接失败，请检查麦克风和 Android System WebView 后重试。</string>
+    <string name="chat_voice_error_timeout">通话连接超时。</string>
+    <string name="chat_voice_error_disconnected">语音连接已断开，请重新呼叫。</string>
+    <string name="chat_voice_error_declined">对方已拒接。</string>
+    <string name="chat_voice_error_interrupted">其他应用中断了通话音频。</string>
+    <string name="chat_voice_error_background">Steam 已切到后台，通话已结束。</string>
+    <string name="chat_voice_error_failed">无法完成通话，请检查网络后重试。</string>
 </resources>

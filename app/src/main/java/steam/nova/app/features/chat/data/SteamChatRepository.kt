@@ -15,6 +15,7 @@ internal class SteamChatRepository(
     val account: SteamChatAccount,
     private val validate: () -> Unit = { if (SteamChatAccount.current(account.id) != account) throw SteamChatFailure("ACCOUNT_CHANGED") },
     private val onEvent: (JSONObject) -> Unit = {},
+    private val onVoice: (String, P.Fields) -> Unit = { _, _ -> },
 ) : AutoCloseable {
     private val events = ArrayDeque<JSONObject>().apply { add(JSONObject().put("type", "resync")) }
     private val profiles = ConcurrentHashMap<String, JSONObject>()
@@ -38,6 +39,17 @@ internal class SteamChatRepository(
         return cm.call("$method#1", body.build()).also { checkAccount() }
     }
 
+    internal fun voiceNotify(method: String, body: P.Writer) {
+        checkAccount()
+        cm.notify("$method#1", body.build())
+    }
+
+    internal fun voiceProfiles(ids: List<String>): JSONArray {
+        loadProfiles(ids)
+        checkAccount()
+        return JSONArray(ids.map(::profile))
+    }
+
     fun snapshot(): JSONObject {
         checkAccount()
         val sessions = SteamChatHttp.friendMessages(account, "GetActiveMessageSessions", P.Writer().number(1, 0).number(2, 1))
@@ -56,6 +68,8 @@ internal class SteamChatRepository(
         val groups = call("ChatRoom.GetMyChatRoomGroups").messages(1).mapNotNull { pair ->
             val group = pair.messages(2).firstOrNull() ?: return@mapNotNull null
             val id = unsigned(group.number(1))
+            // Seed voice membership before joining, so existing participants do not sound like arrivals.
+            onVoice("ChatRoom.GetMyChatRoomGroups", group)
             val ack = pair.messages(1).firstOrNull()?.messages(3).orEmpty()
                 .associate { unsigned(it.number(1)) to it.number(3) }
             val rooms = group.messages(6).sortedBy { it.number(6) }.map { room ->
@@ -232,6 +246,13 @@ internal class SteamChatRepository(
         if (closed) return
         val method = packet.header.text(12).substringBefore('#')
         val fields = P.read(packet.body)
+        if (steam.nova.app.features.chat.voice.SteamChatVoiceProtocol.owns(method)) {
+            onVoice(method, fields)
+            return
+        }
+        // The web plays group enter/exit sounds from room-state changes, not voice-status refreshes.
+        // Keep the normal chat resync below as well.
+        if (method == "ChatRoomClient.NotifyChatRoomGroupRoomsChange") onVoice(method, fields)
         when (method) {
             "FriendMessagesClient.IncomingMessage" -> {
                 val peer = fields.number(1).toString()
