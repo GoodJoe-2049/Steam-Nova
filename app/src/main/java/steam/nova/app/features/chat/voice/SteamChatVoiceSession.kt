@@ -48,6 +48,7 @@ internal class SteamChatVoiceSession(private val app: Context, private val repo:
     private var incomingInvitation = false
     private val roomVoiceMembers = mutableMapOf<String, Set<Long>>()
     private val pendingAcks = mutableListOf<String>()
+    private var acknowledging: Job? = null
     @Volatile private var closed = false
     @Volatile private var published = "{}"
     private val members = linkedMapOf<String, JSONObject>()
@@ -61,7 +62,7 @@ internal class SteamChatVoiceSession(private val app: Context, private val repo:
             .put("key", target?.key.orEmpty()).put("peer", target?.peer.orEmpty()).put("mic", microphone)
             .put("output", output).put("speaker", speaker).put("startedAt", startedAt)
             .put("members", JSONArray(members.values.toList())).put("profiles", JSONArray(profiles.values.toList()))
-            .put("settling", pendingSetup > 0).toString()
+            .put("settling", pendingSetup > 0).put("incoming", incomingInvitation).toString()
     }
     private fun state(value: String) {
         if (value != "incoming") sounds.stopIncoming()
@@ -86,7 +87,10 @@ internal class SteamChatVoiceSession(private val app: Context, private val repo:
                 return@launch
             }
             if (createsSession) { pendingSetup--; publish() }
-            result.fold({ fields -> runCatching { done(fields) }.onFailure { fail("failed", it) } }, { fail("failed", it) })
+            result.fold({ fields -> runCatching { done(fields) }.onFailure { fail("failed", it) } }, {
+                SteamChatDiagnostics.failure("voice.rpc.${SteamChatDiagnostics.operation(method)}", it)
+                fail("failed", it)
+            })
         }
     }
     private fun send(method: String, body: P.Writer) {
@@ -134,6 +138,7 @@ internal class SteamChatVoiceSession(private val app: Context, private val repo:
         return snapshot()
     }
     private fun begin(value: SteamChatRepository.Target) {
+        SteamChatDiagnostics.info("voice.begin", "direction=outgoing kind=${if (value.peer == null) "group" else "private"}")
         generation++; target = value; voiceId = ""; reason = ""; accepted = value.peer == null
         incomingInvitation = false
         microphone = false; output = false; speaker = false; startedAt = 0; members.clear()
@@ -149,7 +154,7 @@ internal class SteamChatVoiceSession(private val app: Context, private val repo:
     private fun startMedia() {
         val token = generation
         try {
-            val route = SteamChatVoiceAudio(app) { if (live(token)) finish("interrupted", true) }
+            val route = SteamChatVoiceAudio(app)
             audio = route; route.start()
             val engine = SteamChatVoiceMedia(app) { kind, value ->
                 if (live(token)) runCatching { mediaEvent(kind, value) }.onFailure { fail("media", it) }
@@ -168,15 +173,28 @@ internal class SteamChatVoiceSession(private val app: Context, private val repo:
                 }
             }
             "ack" -> { pendingAcks.add(value); acknowledge() }
-            "ice" -> when (value) {
-                "connected", "completed" -> { ice = true; disconnect?.cancel(); join(); bind() }
-                "disconnected" -> {
-                    ice = false; state("reconnecting"); disconnect?.cancel(); val token = generation
-                    disconnect = scope.launch { delay(10.seconds); if (live(token) && !ice) finish("disconnected", true) }
+            "ice" -> {
+                SteamChatDiagnostics.info("voice.ice", "state=${SteamChatDiagnostics.operation(value)} phase=$phase")
+                when (value) {
+                    "connected", "completed" -> { ice = true; disconnect?.cancel(); join(); bind() }
+                    "disconnected" -> {
+                        ice = false; state("reconnecting"); disconnect?.cancel(); val token = generation
+                        disconnect = scope.launch { delay(10.seconds); if (live(token) && !ice) finish("disconnected", true) }
+                    }
+                    "failed", "closed" -> finish("disconnected", true)
                 }
-                "failed", "closed" -> finish("disconnected", true)
             }
-            "error" -> finish(if (value == "permission") "permission" else "media", true)
+            "diagnostic" -> runCatching {
+                val detail = JSONObject(value)
+                val keys = listOf("step", "error", "ice", "connection", "signaling", "track")
+                SteamChatDiagnostics.info("voice.media.diagnostic", keys.joinToString(" ") {
+                    "$it=${SteamChatDiagnostics.operation(detail.optString(it).ifEmpty { "none" })}"
+                })
+            }
+            "error" -> {
+                SteamChatDiagnostics.info("voice.media.error", "kind=${SteamChatDiagnostics.operation(value)} phase=$phase")
+                finish(if (value == "permission") "permission" else "media", true)
+            }
             "stats" -> runCatching {
                 val stats = JSONObject(value)
                 SteamChatDiagnostics.info("voice.media", "sent=${stats.optLong("sent")} received=${stats.optLong("received")}", true)
@@ -185,9 +203,22 @@ internal class SteamChatVoiceSession(private val app: Context, private val repo:
     }
     private fun acknowledge() {
         val coordinates = relay ?: return
-        val versions = pendingAcks.toList(); pendingAcks.clear()
-        versions.forEach { version -> rpc("WebRTCClient.AcknowledgeUpdatedRemoteDescription",
-            coordinates.coordinates().number(5, java.lang.Long.parseUnsignedLong(version))) }
+        if (acknowledging?.isActive == true || pendingAcks.isEmpty()) return
+        val token = generation
+        acknowledging = scope.launch {
+            // Answers are applied in order in the media page; acknowledge in that order too.
+            while (live(token) && pendingAcks.isNotEmpty()) {
+                val version = pendingAcks.removeAt(0)
+                val result = runCatching { withContext(Dispatchers.IO) {
+                    repo.call("WebRTCClient.AcknowledgeUpdatedRemoteDescription",
+                        coordinates.coordinates().number(5, java.lang.Long.parseUnsignedLong(version)))
+                } }
+                if (!live(token)) return@launch
+                // Like Monica, a failed acknowledgement alone must not tear down healthy media.
+                result.fold({ SteamChatDiagnostics.info("voice.remote.ack", "version=$version") },
+                    { SteamChatDiagnostics.failure("voice.remote.ack", it) })
+            }
+        }
     }
     private fun join() {
         if (!ice || joining || voiceId.isNotEmpty()) return
@@ -218,7 +249,10 @@ internal class SteamChatVoiceSession(private val app: Context, private val repo:
     fun event(method: String, fields: P.Fields) {
         scope.launch {
             if (closed) return@launch
-            runCatching { receive(method, fields) }.onFailure { fail("failed", it) }
+            runCatching { receive(method, fields) }.onFailure {
+                SteamChatDiagnostics.failure("voice.event.${SteamChatDiagnostics.operation(method)}", it)
+                fail("failed", it)
+            }
         }
     }
     private fun receive(method: String, fields: P.Fields) {
@@ -236,6 +270,7 @@ internal class SteamChatVoiceSession(private val app: Context, private val repo:
                 return
             }
             generation++; target = SteamChatRepository.Target(peer, null, null); voiceId = id
+            SteamChatDiagnostics.info("voice.begin", "direction=incoming kind=private")
             incomingInvitation = true
             reason = ""; members.clear(); microphone = false; output = false; speaker = false; startedAt = 0
             state("incoming"); armDeadline()
@@ -322,12 +357,13 @@ internal class SteamChatVoiceSession(private val app: Context, private val repo:
         SteamChatDiagnostics.failure("voice.failed", error); finish(code, true)
     }
     private fun finish(code: String, notify: Boolean) {
+        SteamChatDiagnostics.info("voice.finish", "phase=$phase reason=${code.ifEmpty { "normal" }} notify=$notify ice=$ice binding=$binding bound=$bound")
         if (notify && voiceId.isNotEmpty()) target?.let { selected ->
             if (selected.peer == null) send("ChatRoom.LeaveVoiceChat", selected.writer())
             else if (phase == "incoming") send("VoiceChat.AnswerOneOnOneChat", SteamChatVoiceProtocol.answer(selected.peer, voiceId, false))
             else send("VoiceChat.LeaveOneOnOneChat", SteamChatVoiceProtocol.leave(selected.peer, voiceId))
         }
-        generation++; deadline?.cancel(); disconnect?.cancel()
+        generation++; deadline?.cancel(); disconnect?.cancel(); acknowledging?.cancel(); acknowledging = null
         media?.stop(); media = null; audio?.stop(); audio = null
         relay = null; voiceId = ""; accepted = false; ice = false; joining = false; binding = false; bound = false
         pendingAcks.clear()

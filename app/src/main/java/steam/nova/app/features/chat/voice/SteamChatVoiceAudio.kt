@@ -8,17 +8,21 @@ import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import steam.nova.app.features.chat.diagnostics.SteamChatDiagnostics
 
 /** Owns only the audio focus and routing acquired for this call. All methods run on main. */
 @Suppress("DEPRECATION")
-internal class SteamChatVoiceAudio(context: Context, private val interrupted: () -> Unit) {
+internal class SteamChatVoiceAudio(context: Context) {
     private val manager = context.getSystemService(AudioManager::class.java)
     private var originalMode: Int? = null
     private var originalSpeaker = false
     private var originalDevice: AudioDeviceInfo? = null
     private var routeChanged = false
     private var focus: AudioFocusRequest? = null
+    private var started = false
     fun start() {
+        if (started) return
+        started = true
         originalMode = manager.mode
         originalSpeaker = manager.isSpeakerphoneOn
         if (Build.VERSION.SDK_INT >= 31) originalDevice = manager.communicationDevice
@@ -26,11 +30,13 @@ internal class SteamChatVoiceAudio(context: Context, private val interrupted: ()
             .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
             .setOnAudioFocusChangeListener({ value ->
-                if (value == AudioManager.AUDIOFOCUS_LOSS || value == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) interrupted()
+                // WebView's remote audio has its own focus owner, even inside the same Steam process.
+                // Focus transfer is not a lost WebRTC connection (same policy as Monica Steam).
+                if (started) SteamChatDiagnostics.info("voice.audio.focus", "change=$value")
             }, Handler(Looper.getMainLooper())).build()
         focus = request
-        check(manager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
         manager.mode = AudioManager.MODE_IN_COMMUNICATION
+        SteamChatDiagnostics.info("voice.audio.focus.request", "result=${manager.requestAudioFocus(request)}")
     }
     fun speaker(enabled: Boolean) {
         if (Build.VERSION.SDK_INT >= 31) {
@@ -42,6 +48,8 @@ internal class SteamChatVoiceAudio(context: Context, private val interrupted: ()
         routeChanged = true
     }
     fun stop() {
+        if (!started) return
+        started = false
         runCatching {
             if (routeChanged) {
                 if (Build.VERSION.SDK_INT >= 31) {

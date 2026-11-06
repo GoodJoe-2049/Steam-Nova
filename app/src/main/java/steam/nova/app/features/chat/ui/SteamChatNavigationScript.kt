@@ -8,6 +8,11 @@ internal object SteamChatNavigationScript {
             var env=chatEnvironment(require),ui=chatUi(require);
             return env.React.createElement(ui.Screen,props);
         }
+        function ThreadRoute(props){
+            var env=chatEnvironment(require),R=env.React,params=(props.route||{}).params||{};
+            return R.createElement(R.Fragment,null,R.createElement(ChatRoute,props),
+                R.createElement(chatVoiceOverlay(env).Host,{threadKey:(params.target||{}).key,account:params.account}));
+        }
         function Coordinator(){
             var env=chatEnvironment(require),R=env.React,N=env.RN,auth=require(1136).useAuth(),canChat=chatUi(require).allowed();
             var account=auth.bReady&&auth.bLoggedIn&&canChat?auth.activeSteamID:'';
@@ -17,7 +22,7 @@ internal object SteamChatNavigationScript {
                 var subscription=N.AppState.addEventListener('change',function(value){if(value==='active')env.start(account);else env.pause();});
                 return function(){subscription.remove();env.pause();};
             },[account]);
-            return R.createElement(chatVoiceUi(env).Global);
+            return null;
         }
         function ChatTab(props){
             var env=chatEnvironment(require),R=env.React,N=env.RN,ui=chatUi(require),chatState=env.useStore();
@@ -42,7 +47,7 @@ internal object SteamChatNavigationScript {
                         var R=require(115),options=chatUi(require).layout.useTransitionOptions();
                         var main=p.children.find(function(child){return child&&child.props&&child.props.name==='MainTabs';});
                         return R.createElement(type,Object.assign({},p,{children:p.children.concat([
-                            R.createElement(main.type,{name:'MillenniumChatThread',component:ChatRoute,options:options,key:'millennium-chat-thread'})])}));
+                            R.createElement(main.type,{name:'MillenniumChatThread',component:ThreadRoute,options:options,key:'millennium-chat-thread'})])}));
                     };rootNavigatorCache.set(type,RootWrapper);}
                     return original(RootWrapper,props,key);
                 }
@@ -51,7 +56,10 @@ internal object SteamChatNavigationScript {
                 var notification=props.children.find(function(child){return child&&child.props&&child.props.name==='Notifications';});
                 if(notification){
                     var Wrapper=navigatorCache.get(type);
-                    if(!Wrapper){Wrapper=function(p){var R=require(115);return R.createElement(R.Fragment,null,R.createElement(Coordinator),R.createElement(type,p));};navigatorCache.set(type,Wrapper);}
+                    if(!Wrapper){Wrapper=function(p){var env=chatEnvironment(require),R=env.React;
+                        return R.createElement(R.Fragment,null,R.createElement(Coordinator),R.createElement(type,p),
+                            R.createElement(chatVoiceOverlay(env).Host));
+                    };navigatorCache.set(type,Wrapper);}
                     var children=props.children.concat([require(115).createElement(notification.type,{name:'MillenniumChat',component:ChatRoute,key:'millennium-chat'})]);
                     return original(Wrapper,Object.assign({},props,{children:children}),key);
                 }

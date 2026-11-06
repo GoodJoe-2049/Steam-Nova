@@ -82,7 +82,7 @@ internal class SteamChatVoiceMedia(private val context: Context, private val cal
         @Suppress("unused")
         @JavascriptInterface
         fun event(kind: String, value: String) {
-            if (value.length > 512 * 1024 || kind !in setOf("offer", "ack", "ice", "error", "stats")) return
+            if (value.length > 512 * 1024 || kind !in setOf("offer", "ack", "ice", "error", "stats", "diagnostic")) return
             main.post { if (!stopped) callback(kind, value) }
         }
     }

@@ -443,6 +443,9 @@
     <string name="chat_voice_settings">语音设置</string>
     <string name="chat_voice_end_chat">结束语音聊天</string>
     <string name="chat_voice_stop_talking">停止说话</string>
+    <string name="chat_voice_start_talking">开始说话</string>
+    <string name="chat_voice_decline_invitation">拒绝</string>
+    <string name="chat_voice_incoming_friend">%1$s 希望进行语音聊天</string>
     <string name="chat_voice_waiting_friend">等待 %1$s 加入</string>
     <string name="chat_voice_active_friend">正在和 %1$s 语音聊天</string>
     <string name="chat_voice_connecting">正在连接语音…</string>

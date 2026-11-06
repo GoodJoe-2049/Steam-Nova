@@ -64,7 +64,8 @@ internal object SteamChatVoiceScript {
         function text(value,style,props){return h(N.Text,Object.assign({allowFontScaling:false,style:Object.assign({color:'#969696',fontSize:12,lineHeight:16,
             fontFamily:(env.threadFonts||{}).regular||'sans-serif',includeFontPadding:false},style||{})},props||{}),value);}
         function active(v){return !!(v&&v.phase&&v.phase!=='idle'&&v.phase!=='ended'&&(!v.account||v.account===env.currentAccount()));}
-        function inThread(v,target){return active(v)&&target&&v.key===target.key&&v.phase!=='incoming';}
+        function matchesThread(v,target){return active(v)&&target&&v.key===target.key;}
+        function inThread(v,target){return matchesThread(v,target)&&v.phase!=='incoming';}
         function status(v){return t('chat_voice_'+(v.phase||'idle'));}
         function failure(code){return t('chat_voice_error_'+(['permission','media','timeout','disconnected','declined','interrupted','background'].indexOf(code)>=0?code:'failed'));}
         function send(action,v,args){var account=env.currentAccount();if(v.account&&v.account!==account)return Promise.resolve();
@@ -129,15 +130,18 @@ internal object SteamChatVoiceScript {
                 !props.row?h(N.View,{style:{position:'absolute',right:0,top:0,bottom:0,width:4}},h(Gradient,{id:'voiceInsetRight',direction:{x1:1,y1:0,x2:0,y2:0},stops:stops})):null,
                 !props.row?h(N.View,{style:{position:'absolute',left:0,right:0,bottom:0,height:4}},h(Gradient,{id:'voiceInsetBottom',direction:{x1:0,y1:1,x2:0,y2:0},stops:stops})):null);}
         function insetStyle(row){return Number(N.Platform.Version)>=29?{boxShadow:[{inset:true,offsetX:0,offsetY:row?2:0,blurRadius:4,color:row?'rgba(0,0,0,0.25)':'#000000'}]}:{};}
-        function GreenButton(props){var width=props.width||94.16;return h(N.Pressable,{onPress:props.press,accessibilityRole:'button',accessibilityLabel:props.title,hitSlop:{top:4,bottom:4},
-            style:{height:32,width:width,marginTop:4,marginRight:8,borderRadius:3,justifyContent:'center',alignItems:'center',
+        function InviteButton(props){var measured=R.useState(props.width||94.16),width=props.natural?measured[0]:props.width||94.16;
+            return h(N.Pressable,{onPress:props.press,accessibilityRole:'button',accessibilityLabel:props.title,hitSlop:{top:4,bottom:4},
+            style:{height:32,width:props.natural?undefined:width,maxWidth:props.natural?112:undefined,minWidth:props.natural?0:undefined,flexShrink:props.natural?1:0,marginTop:4,marginRight:8,borderRadius:3,justifyContent:'center',alignItems:'center',
                 boxShadow:Number(N.Platform.Version)>=28?[{offsetX:1,offsetY:2,blurRadius:18,color:'rgba(0,0,0,0.3)'}]:undefined,elevation:Number(N.Platform.Version)<28?3:0}},
-            function(s){var colors=s.pressed?['#0b6416','#0ead1e']:s.hovered?['#13ae26','#16f72d']:['#12a123','#10ce4f'];
+            function(s){var colors=props.danger?(s.hovered?['#ee4723','#ed3500']:['#da3d23','#d92b00']):
+                    s.pressed?['#0b6416','#0ead1e']:s.hovered?['#13ae26','#16f72d']:['#12a123','#10ce4f'];
                 // Android resolves an SVG percentage against the padded content box. Keep the paint layer unpadded
                 // and give it explicit dimensions; only the separate label wrapper owns the web's text padding.
-                return h(N.View,{style:{width:width,height:32,borderRadius:3,overflow:'hidden'}},
-                    h(Gradient,{id:'voiceGreenButton',width:width,height:32,direction:{gradientUnits:'userSpaceOnUse',x1:0,y1:0,x2:width,y2:0},stops:[[0,colors[0]],[1,colors[1]]]}),
-                    h(N.View,{style:{width:width,height:32,justifyContent:'center',paddingHorizontal:16,paddingBottom:2}},
+                return h(N.View,{onLayout:props.natural?function(e){var w=e.nativeEvent.layout.width;if(w>0&&Math.abs(w-width)>0.25)measured[1](w);}:undefined,
+                    style:{width:props.natural?undefined:width,alignSelf:props.natural?'stretch':undefined,maxWidth:props.natural?112:undefined,height:32,borderRadius:3,overflow:'hidden'}},
+                    h(Gradient,{id:props.danger?'voiceDeclineButton':'voiceGreenButton',width:width,height:32,direction:{gradientUnits:'userSpaceOnUse',x1:0,y1:0,x2:width,y2:0},stops:[[0,colors[0]],[1,colors[1]]]}),
+                    h(N.View,{style:{width:props.natural?undefined:width,height:32,justifyContent:'center',paddingHorizontal:props.compact?8:16,paddingBottom:2}},
                         text(props.title,{fontSize:13.333,lineHeight:14,color:'#ffffff',textAlign:'center'},{numberOfLines:2})));});}
         function DockButton(props){var hover=R.useState(false),pressed=R.useState(false),leave=props.icon==='leave',lit=hover[0]||pressed[0];
             var glow=useTween(lit?1:0,300,ease,true);
@@ -188,25 +192,28 @@ internal object SteamChatVoiceScript {
                 props.empty?h(Inset):null);}
         function name(v,state){if(v.peer)return env.profile(state.profiles[v.peer],v.peer).name;
             var room;state.groups.some(function(g){room=(g.rooms||[]).find(function(r){return r.key===v.key;});return !!room;});return room?room.title:t('chat_voice_call');}
-        function Row(props){var v=props.value,state=props.state,connected=v.phase==='connected',width=R.useState(390),wash=useTween(connected?1:0,300,ease,true);
-            var peerPresent=connected||(v.members||[]).some(function(m){return m.id===v.peer;}),waiting=!!v.peer&&!peerPresent;
-            var ids=[state.account].concat(v.peer?[v.peer]:(v.members||[]).map(function(m){return m.id;}).filter(function(id){return id!==state.account;}));
-            var label=waiting?t('chat_voice_waiting_friend',name(v,state)):connected?v.peer?t('chat_voice_active_friend',name(v,state)):status(v):status(v);
+        function Row(props){var v=props.value,state=props.state,incoming=v.phase==='incoming',connected=v.phase==='connected',width=R.useState(390),wash=useTween(connected?1:0,300,ease,true);
+            var peerPresent=incoming||(v.incoming&&v.phase==='connecting')||connected||(v.members||[]).some(function(m){return m.id===v.peer;}),waiting=!!v.peer&&!peerPresent;
+            var ids=v.peer&&(incoming||v.incoming)?[v.peer,state.account]:[state.account].concat(v.peer?[v.peer]:(v.members||[]).map(function(m){return m.id;}).filter(function(id){return id!==state.account;}));
+            var label=incoming?t('chat_voice_incoming_friend',name(v,state)):waiting?t('chat_voice_waiting_friend',name(v,state)):connected?v.peer?t('chat_voice_active_friend',name(v,state)):status(v):status(v);
             return h(N.View,{onLayout:function(e){width[1](e.nativeEvent.layout.width);},style:[{height:40,flexDirection:'row',backgroundColor:'#393e45'},insetStyle(true)]},
                 h(N.Animated.View,{pointerEvents:'none',style:[absolute,{opacity:wash}]},h(Gradient,{id:'voiceRowConnected',
                     radial:{gradientUnits:'userSpaceOnUse',cx:width[0]*0.1,cy:20,rx:width[0]*0.64,ry:124},stops:[[0,'#1c9331',0.5],[0.7,'#1c9331',0]]})),
                 h(N.View,{accessible:true,accessibilityRole:'image',accessibilityLabel:t('chat_voice_settings'),style:{width:44,height:40,alignItems:'center',justifyContent:'center'}},h(Icon,{name:'settings',color:'#898989'})),
-                h(GreenButton,{title:t(connected?'chat_voice_stop_talking':'chat_voice_end_chat'),press:function(){send('leave',v);}}),
-                h(N.View,{style:{flexDirection:'row',maxWidth:v.peer?88:132,overflow:'hidden'}},ids.slice(0,v.peer?2:3).map(function(id){var p=env.profile(id===state.account?Object.assign({},state.self||{},state.profiles[id]||{}):state.profiles[id],id);
-                    return h(Participant,{key:id,profile:p,avatar:props.avatar,empty:id===v.peer&&!peerPresent,connecting:v.phase==='connecting'||v.phase==='reconnecting',connected:connected});})),
+                h(InviteButton,{title:t(incoming?'chat_voice_start_talking':connected?'chat_voice_stop_talking':'chat_voice_end_chat'),natural:incoming,compact:incoming&&width[0]<350,press:function(){if(incoming)accept(v);else send('leave',v);}}),
+                incoming?h(InviteButton,{title:t('chat_voice_decline_invitation'),natural:true,compact:width[0]<350,danger:true,press:function(){send('leave',v);}}):null,
+                h(N.View,{style:{flexDirection:'row',flexShrink:0,maxWidth:v.peer?88:132,overflow:'hidden'}},ids.slice(0,v.peer?2:3).map(function(id){var p=env.profile(id===state.account?Object.assign({},state.self||{},state.profiles[id]||{}):state.profiles[id],id);
+                    return h(Participant,{key:id,profile:p,avatar:props.avatar,empty:incoming?id===state.account:id===v.peer&&!peerPresent,connecting:v.phase==='connecting'||v.phase==='reconnecting',connected:connected});})),
                 text(label,{flex:1,minWidth:0,marginLeft:8,marginRight:8,marginTop:10,color:connected?'#87dfa3':'#969696'},{numberOfLines:1,accessibilityLiveRegion:'polite'}),h(Inset,{row:true}));}
         function Bar(props){var state=env.useStore(),v=state.voice||{},focused=env.require(1366).useIsFocused();
             R.useEffect(function(){if(focused){env.voiceThread=props.target.key;env.emit();}
                 return function(){if(env.voiceThread===props.target.key){env.voiceThread='';env.emit();}};},[focused,props.target.key,state.account]);
-            return h(Presence,{key:state.account+':'+props.target.key,show:inThread(v,props.target),axis:'height',extent:40,exitFade:160,contentStyle:{height:40}},
+            return h(Presence,{key:state.account+':'+props.target.key,show:focused&&matchesThread(v,props.target),axis:'height',extent:40,exitFade:160,contentStyle:{height:40}},
                 h(Row,{value:v,state:state,avatar:props.avatar}));}
-        function Global(){var state=env.useStore(),v=state.voice||{},insets=env.require(1486).useSafeAreaInsets();env.voiceCurrent=v;
-            var incoming=v.phase==='incoming',ended=v.phase==='ended',outside=active(v)&&env.voiceThread!==v.key,show=incoming||outside||(ended&&!!v.reason);
+        function Global(props){var state=env.useStore(),v=state.voice||{},insets=env.require(1486).useSafeAreaInsets();env.voiceCurrent=v;
+            // Screen hosts supply the current route immediately, before thread focus effects run.
+            var threadKey=props.threadKey===undefined?env.voiceThread:(props.account&&props.account!==state.account?'':props.threadKey);
+            var incoming=v.phase==='incoming',ended=v.phase==='ended',outside=active(v)&&threadKey!==v.key,show=outside||(ended&&!!v.reason);
             R.useEffect(function(){if(ended&&!v.reason){var timer=setTimeout(function(){send('dismiss',v);},300);return function(){clearTimeout(timer);};}},[v.token,v.phase,v.reason]);
             R.useEffect(function(){if(incoming){N.Keyboard.dismiss();N.AccessibilityInfo.announceForAccessibility(t('chat_voice_incoming'));}},[incoming,v.token]);
             function open(){if(!v.key||!active(v))return;state.openTarget=env.targetFor(v.key);env.emit();}
@@ -217,8 +224,8 @@ internal object SteamChatVoiceScript {
                     h(N.Pressable,{onPress:open,disabled:ended,accessibilityRole:ended?undefined:'button',accessibilityLabel:t('chat_voice_expand'),style:{minHeight:40,justifyContent:'center'}},
                         text(name(v,state),{color:'#c8f1c2',fontSize:14},{numberOfLines:1}),text(ended&&v.reason?failure(v.reason):status(v),{marginTop:4},{accessibilityLiveRegion:'polite'})),
                     incoming?h(N.View,{style:{flexDirection:'row',justifyContent:'flex-end'}},
-                        h(GreenButton,{title:t('chat_voice_decline'),press:function(){send('leave',v);}}),h(GreenButton,{title:t('chat_voice_accept'),press:function(){accept(v);}})):
-                        ended?h(GreenButton,{title:t('chat_close'),press:function(){send('dismiss',v);}}):h(N.View,{style:{alignItems:'flex-end',marginTop:6}},h(DockFace,{value:v}))));
+                        h(InviteButton,{title:t('chat_voice_decline'),press:function(){send('leave',v);}}),h(InviteButton,{title:t('chat_voice_accept'),press:function(){accept(v);}})):
+                        ended?h(InviteButton,{title:t('chat_close'),press:function(){send('dismiss',v);}}):h(N.View,{style:{alignItems:'flex-end',marginTop:6}},h(DockFace,{value:v}))));
         }
         env.voiceUi={Global:Global,Bar:Bar,Dock:Dock,HeaderIndicator:HeaderIndicator,start:start,inThread:inThread};return env.voiceUi;
     }

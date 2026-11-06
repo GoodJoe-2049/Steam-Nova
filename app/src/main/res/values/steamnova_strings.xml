@@ -454,6 +454,9 @@
     <string name="chat_voice_settings">Voice settings</string>
     <string name="chat_voice_end_chat">End Voice Chat</string>
     <string name="chat_voice_stop_talking">Stop Talking</string>
+    <string name="chat_voice_start_talking">Start Talking</string>
+    <string name="chat_voice_decline_invitation">Decline</string>
+    <string name="chat_voice_incoming_friend">%1$s would like to voice chat</string>
     <string name="chat_voice_waiting_friend">Waiting for %1$s to join</string>
     <string name="chat_voice_active_friend">Voice chatting with %1$s</string>
     <string name="chat_voice_connecting">Connecting voice…</string>
