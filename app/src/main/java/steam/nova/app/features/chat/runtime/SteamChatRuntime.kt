@@ -10,6 +10,8 @@ import steam.nova.app.features.chat.data.SteamChatRepository
 import steam.nova.app.features.chat.diagnostics.SteamChatDiagnostics
 import steam.nova.app.features.chat.network.SteamChatAccount
 import steam.nova.app.features.chat.network.SteamChatFailure
+import steam.nova.app.features.chat.read.SteamChatReadState
+import steam.nova.app.features.chat.read.SteamChatReadSync
 import steam.nova.app.features.chat.voice.SteamChatVoiceSession
 import steam.nova.app.features.ui.settings.SteamModuleSettings
 import org.json.JSONArray
@@ -31,6 +33,7 @@ internal class SteamChatRuntime(context: Context) {
 
     private inner class Session(val account: SteamChatAccount, var epoch: Long) {
         val disk = SteamChatCache(app, account.id)
+        val reads = SteamChatReadState(disk.readReceipts(), disk::saveReadReceipts)
         var groups: JSONArray = disk.summary().optJSONArray("groups") ?: JSONArray()
         @Volatile var foreground = true
         @Volatile var visibleThread = ""
@@ -43,6 +46,12 @@ internal class SteamChatRuntime(context: Context) {
             }
         }, { method, fields -> voice.event(method, fields) })
         val voice = SteamChatVoiceSession(app, repo)
+        val readSync = SteamChatReadSync(reads, { checkSession(this) }, { key, timestamp ->
+            val parts = key.split(':')
+            val args = JSONObject().put("timestamp", timestamp)
+            if (parts[0] == "p") args.put("peer", parts[1]) else args.put("group", parts[1]).put("room", parts[2])
+            repo.acknowledge(args)
+        }, repo::readPositions)
     }
 
     init {
@@ -57,7 +66,7 @@ internal class SteamChatRuntime(context: Context) {
                     val snapshot = lease.repo.snapshot()
                     synchronized(lock) {
                         checkSession(lease); lease.groups = groups
-                        lease.disk.saveSummary(snapshot.put("groups", groups))
+                        saveSummary(lease, snapshot.put("groups", groups))
                     }
                 }
             }.onFailure { error ->
@@ -88,7 +97,7 @@ internal class SteamChatRuntime(context: Context) {
             return@synchronized existing
         }
         clearSession()
-        Session(account, epoch).also { session = it; SteamChatDiagnostics.info("runtime.session.ready") }
+        Session(account, epoch).also { session = it; it.readSync.wake(); SteamChatDiagnostics.info("runtime.session.ready") }
     }
 
     fun <T> withRepository(account: SteamChatAccount, args: JSONObject, block: (SteamChatRepository) -> T): T {
@@ -109,12 +118,11 @@ internal class SteamChatRuntime(context: Context) {
         val lease = acquire(account, args)
         val repo = lease.repo
         val disk = lease.disk
-        val targetKey = args.optString("key")
         val result: Any = when (operation) {
             "voice" -> lease.voice.command(args)
             "voiceState" -> lease.voice.snapshot()
             "gameInfo" -> games.resolve(args.getString("appId"), args.optString("language"))
-            "cache" -> disk.summary().put("background", notifications.status())
+            "cache" -> lease.reads.summary(disk.summary()).put("background", notifications.status())
             "threadCache" -> disk.recover(SteamChatRepository.Target.parse(args).key)
             "threadState" -> disk.state(SteamChatRepository.Target.parse(args).key, args)
             "preferences" -> disk.preference(SteamChatRepository.Target.parse(args).key, args)
@@ -126,6 +134,7 @@ internal class SteamChatRuntime(context: Context) {
                         lease.visibilityEpoch = requestEpoch; lease.visibilityVersion = version
                         lease.foreground = args.optBoolean("foreground", true); lease.visibleThread = args.optString("key")
                         lease.voice.foreground(lease.foreground)
+                        lease.repo.foreground(lease.foreground)
                         if (lease.foreground && lease.visibleThread.isNotBlank()) notifications.cancel(account.id, lease.visibleThread)
                     }
                 }
@@ -135,15 +144,18 @@ internal class SteamChatRuntime(context: Context) {
             "backgroundEnable" -> synchronized(lock) { checkSession(lease); notifications.enable() }
             "backgroundDisable" -> synchronized(lock) { checkSession(lease); notifications.disable() }
             "snapshot" -> repo.snapshot().also { value ->
-                synchronized(lock) { checkSession(lease); disk.saveSummary(value.put("groups", lease.groups)) }
+                synchronized(lock) { checkSession(lease); saveSummary(lease, value.put("groups", lease.groups)) }
             }
             "groups" -> repo.groups().also { value ->
                 synchronized(lock) {
                     checkSession(lease); lease.groups = value
-                    disk.saveSummary(disk.summary().put("groups", value))
+                    saveSummary(lease, disk.summary().put("groups", value))
                 }
             }
-            "events" -> repo.drain().put(JSONObject().put("type", "voice").put("value", lease.voice.snapshot()))
+            "events" -> repo.drain().also { values ->
+                val updates = lease.reads.drain()
+                for (index in 0 until updates.length()) values.put(updates.getJSONObject(index))
+            }.put(JSONObject().put("type", "voice").put("value", lease.voice.snapshot()))
             "friends" -> repo.friends()
             "history" -> repo.history(args).also {
                 synchronized(lock) { checkSession(lease); disk.merge(SteamChatRepository.Target.parse(args).key, it.getJSONArray("messages"), it.getBoolean("more")) }
@@ -163,7 +175,20 @@ internal class SteamChatRuntime(context: Context) {
                 }
             }
             "discardPending" -> disk.merge(SteamChatRepository.Target.parse(args).key, JSONArray(), remove = args.getString("localId"))
-            "ack" -> repo.acknowledge(args).also { synchronized(lock) { checkSession(lease); notifications.cancel(account.id, targetKey) } }
+            "deleteLocalMedia" -> disk.deleteLocal(SteamChatRepository.Target.parse(args).key, args.getString("id"))
+            "ack" -> synchronized(lock) {
+                checkSession(lease)
+                val key = SteamChatRepository.Target.parse(args).key
+                val timestamp = args.getLong("timestamp")
+                // Persist first; network work runs on the read worker and may outlive this page.
+                lease.reads.mark(key, timestamp, seenTimestamp = args.optLong("seenTimestamp", timestamp),
+                    seenOrdinal = args.optLong("seenOrdinal", 0xffffffffL)).also {
+                    disk.saveSummary(lease.reads.summary(disk.summary()))
+                    notifications.cancelThrough(account.id, key, timestamp)
+                    lease.readSync.wake()
+                    SteamChatDiagnostics.info("read.local.saved")
+                }
+            }
             "catalog" -> repo.catalog().also { synchronized(lock) { checkSession(lease); disk.saveCatalog(it) } }
             "catalogCache" -> disk.catalog()
             "chatTradeUrl" -> repo.tradeUrl()
@@ -178,12 +203,30 @@ internal class SteamChatRuntime(context: Context) {
     }
 
 
+    private fun saveSummary(lease: Session, value: JSONObject) {
+        value.optJSONArray("sessions")?.let(lease.reads::observe)
+        value.optJSONArray("groups")?.let { groups ->
+            for (index in 0 until groups.length()) groups.getJSONObject(index).optJSONArray("rooms")?.let(lease.reads::observe)
+        }
+        lease.disk.saveSummary(lease.reads.summary(value))
+    }
+
     private fun handleEvent(lease: Session, event: JSONObject): Unit = synchronized(lock) {
         checkSession(lease)
         val repo = lease.repo
         val disk = lease.disk
         val type = event.optString("type")
         if (type == "disconnected") lease.voice.connectionLost()
+        if (type == "connected") lease.readSync.wake()
+        if (type == "read") {
+            val key = event.getString("key")
+            val timestamp = event.getLong("timestamp")
+            lease.reads.mark(key, timestamp, confirmed = true)
+            disk.saveSummary(lease.reads.summary(disk.summary()))
+            notifications.cancelThrough(repo.account.id, key, timestamp)
+            SteamChatDiagnostics.info("read.echo.applied")
+            return
+        }
         if (type == "reaction" || type == "modified") {
             val key = event.getString("key"); val messages = disk.thread(key).getJSONArray("messages")
             for (index in 0 until messages.length()) {
@@ -216,7 +259,8 @@ internal class SteamChatRuntime(context: Context) {
         val prior = disk.thread(key).getJSONArray("messages")
         val known = (0 until prior.length()).any { prior.getJSONObject(it).optString("id") == message.getString("id") }
         disk.merge(key, JSONArray().put(message))
-        if (known || message.optString("sender") == repo.account.id || (lease.foreground && lease.visibleThread == key) ||
+        if (known || message.optLong("timestamp") <= lease.reads.readThrough(key) ||
+            message.optString("sender") == repo.account.id || (lease.foreground && lease.visibleThread == key) ||
             disk.preferences().optJSONObject(key)?.optBoolean("muted") == true) return
         notifications.post(repo.account.id, key, message)
     }
@@ -231,6 +275,7 @@ internal class SteamChatRuntime(context: Context) {
     private fun clearSession() {
         val old = session
         session = null
+        old?.readSync?.close()
         old?.voice?.close()
         old?.repo?.close()
         notifications.clear()

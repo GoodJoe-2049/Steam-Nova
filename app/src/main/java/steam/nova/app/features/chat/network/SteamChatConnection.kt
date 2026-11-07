@@ -2,6 +2,7 @@ package steam.nova.app.features.chat.network
 
 import steam.nova.app.features.chat.protocol.SteamChatProtocol as Proto
 import steam.nova.app.features.chat.diagnostics.SteamChatDiagnostics
+import steam.nova.app.features.chat.presence.SteamChatLocalPresence
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -32,6 +33,7 @@ internal class SteamChatConnection(
     @Volatile private var closed = false
     private var connecting: CompletableFuture<Unit>? = null
     private var heartbeat: ScheduledFuture<*>? = null
+    private val presence = SteamChatLocalPresence()
 
     fun ensureConnected() {
         var owner = false
@@ -109,6 +111,22 @@ internal class SteamChatConnection(
         send(151, body, method = method)
     }
 
+    /** Nonblocking activity update; background refresh must not announce an active user. */
+    fun foreground(value: Boolean) {
+        synchronized(lock) {
+            if (!presence.foreground(value) || closed || session == 0 || socket == null) return
+            runCatching { send(716, presence.packet()) }
+                .onFailure { SteamChatDiagnostics.failure("presence.publish", it) }
+        }
+    }
+
+    fun requestFriendData(ids: List<String>) {
+        ensureConnected()
+        val body = Proto.Writer().number(1, 339)
+        ids.forEach { body.fixed64(2, it.toLong()) }
+        send(815, body.build())
+    }
+
     fun catalog(): Proto.Fields {
         ensureConnected()
         val future = CompletableFuture<Proto.Packet>()
@@ -156,11 +174,18 @@ internal class SteamChatConnection(
                                     if (socket === webSocket && !closed) runCatching { send(703, byteArrayOf()) }
                                 }, seconds, seconds, TimeUnit.SECONDS)
                             }
-                            ready.complete(Unit)
                             runCatching { onState(true) }
+                            synchronized(lock) {
+                                if (closed || socket !== webSocket) return
+                                send(716, presence.packet())
+                            }
+                            ready.complete(Unit)
                         }
                         757 -> throw SteamChatFailure("OFFLINE")
                         else -> {
+                            if (packet.type == 766) synchronized(lock) {
+                                presence.receive(account.id, Proto.read(packet.body))
+                            }
                             val job = packet.header.number(11, -1)
                             val pending = jobs.remove(job) ?: packets.remove(packet.type)
                             if (pending != null) pending.complete(packet)

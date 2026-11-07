@@ -3,7 +3,7 @@ package steam.nova.app.features.chat.ui
 internal object SteamChatMediaScript {
     fun source() = """
     function chatMedia(env,ui){
-        var R=env.React,N=env.RN,h=R.createElement,t=ui.t,label=ui.label,Button=ui.Button,colors=ui.colors;
+        var R=env.React,N=env.RN,h=R.createElement,t=ui.t,label=ui.label,Button=ui.Button,colors=ui.colors,presentation=chatMediaPresentation(env,ui);
         function safe(url){return /^https:\/\/(?:[a-z0-9-]+\.)*(?:steamusercontent\.com|steamcontent\.com|steamstatic\.com|akamaihd\.net|steamcommunity\.com)\//i.test(url)?url:null;}
         function openLink(url){if(/^https?:\/\/[^\s<>]+$/i.test(url))N.Linking.openURL(url).catch(function(){});}
         function attrs(raw){var result={},re=/([a-z_]+)=(?:"([^"]*)"|'([^']*)'|([^\s\]]+))/gi,m;while((m=re.exec(raw||''))!==null)result[m[1].toLowerCase()]=(m[2]||m[3]||m[4]||'').replace(/&amp;/g,'&');return result;}
@@ -12,7 +12,7 @@ internal object SteamChatMediaScript {
             return h(N.Pressable,{accessibilityRole:'button',accessibilityLabel:t('chat_view_image'),onPress:function(){props.open(uri);}},
                 h(N.Image,{source:{uri:uri},resizeMode:'contain',onError:function(){fail[1](true);},style:{width:props.small?128:220,height:props.small?128:180,maxWidth:'100%'}}));
         }
-        function Spoiler(props){var revealed=R.useState(false);return revealed[0]?h(RichText,{text:props.text,open:props.open,depth:props.depth,detail:props.detail}):
+        function Spoiler(props){var revealed=R.useState(false);return revealed[0]?h(RichText,props):
             h(N.Pressable,{onPress:function(){revealed[1](true);},accessibilityRole:'button',style:{backgroundColor:'#39414d',padding:18,borderRadius:4}},label(t('chat_spoiler_tap_to_reveal'),{color:'#b7bec8'}));}
         var gameMetadata={},gameRequests={},gameFailures={};
         function gameInfo(app,language){
@@ -68,7 +68,11 @@ internal object SteamChatMediaScript {
             var body=props.text||'',m;
             function richLabel(value,style,options){return props.detail?chatThreadAppearance(env,ui).text(value,Object.assign({},style||{},{fontSize:16,lineHeight:24,letterSpacing:0.5}),options):label(value,style,options);}
             if((props.depth||0)>8)return richLabel(body,{lineHeight:22},{selectable:true});
-            if((m=/^\[spoiler(?:=[^\]]+)?\]([\s\S]*)\[\/spoiler\]$/i.exec(body.trim())))return h(Spoiler,{text:m[1],open:props.open,depth:(props.depth||0)+1,detail:props.detail});
+            if((m=/^\[spoiler(?:=[^\]]+)?\]([\s\S]*)\[\/spoiler\]$/i.exec(body.trim())))return h(Spoiler,Object.assign({},props,{text:m[1],depth:(props.depth||0)+1}));
+            var mediaParts=!props.mediaParsed&&presentation.parse(body);
+            if(mediaParts)return h(N.View,{style:{minWidth:0}},mediaParts.map(function(part,index){return part.url?
+                h(presentation.Card,{key:'media'+index,media:part,item:props.item,target:props.target,profile:props.profile,active:props.active,open:props.open}):
+                part.text.trim()?h(RichText,Object.assign({},props,{key:'text'+index,text:part.text,mediaParsed:true})):null;}));
             if((m=/^\/(?:me)\s+([\s\S]+)/i.exec(body)))return richLabel(m[1],{fontStyle:'italic',color:'#b6c7da',lineHeight:22},{selectable:true});
             if((m=/^\/(sticker|roomeffect)\s+([^\s]+)\s*$/i.exec(body)))return m[1].toLowerCase()==='sticker'?
                 h(MediaImage,{uri:'https://steamcommunity.com/economy/sticker/'+encodeURIComponent(m[2]),small:true,open:props.open}):
@@ -145,35 +149,7 @@ internal object SteamChatMediaScript {
                         onPress:function(){props.choose(kind==='emoticons'?':'+item.name+':':(kind==='stickers'?'/sticker ':'/roomeffect ')+item.name,kind,item);}},
                         kind==='effects'?label(item.name+(item.infinite?' ∞':' ×'+item.count),{fontSize:13}):h(N.Image,{source:{uri:'https://steamcommunity.com/economy/'+(kind==='emoticons'?'emoticonlarge/':'sticker/')+encodeURIComponent(item.name)},style:{width:40,height:40}}));}}));
         }
-        function Viewer(props){
-            var transform=R.useRef({scale:1,x:0,y:0,width:1,height:1,ratio:1}),tick=R.useState(0)[1],gesture=R.useRef(null),lastTap=R.useRef(0),saving=R.useState(false),status=R.useState('');
-            function update(scale,x,y){var v=transform.current;v.scale=Math.max(1,Math.min(5,scale));var w=Math.min(v.width,v.height*v.ratio),ht=w/v.ratio;
-                var bx=Math.max(0,(w*v.scale-v.width)/2),by=Math.max(0,(ht*v.scale-v.height)/2);v.x=Math.max(-bx,Math.min(bx,x));v.y=Math.max(-by,Math.min(by,y));tick(function(n){return n+1;});}
-            function points(e){var p=e.nativeEvent.touches||[];if(p.length<2)return null;var a=p[0],b=p[1];return {distance:Math.sqrt(Math.pow(a.pageX-b.pageX,2)+Math.pow(a.pageY-b.pageY,2)),x:(a.locationX+b.locationX)/2,y:(a.locationY+b.locationY)/2};}
-            var responder=R.useRef(N.PanResponder.create({
-                onStartShouldSetPanResponder:function(){return true;},onMoveShouldSetPanResponder:function(){return true;},
-                onPanResponderGrant:function(e,g){var v=transform.current;gesture.current={pinch:points(e),scale:v.scale,x:v.x,y:v.y,dx:g.dx,dy:g.dy};},
-                onPanResponderMove:function(e,g){var v=transform.current,start=gesture.current,p=points(e);if(!start)return;
-                    if(p&&!start.pinch){gesture.current={pinch:p,scale:v.scale,x:v.x,y:v.y,dx:g.dx,dy:g.dy};return;}
-                    if(p){var scale=start.scale*p.distance/Math.max(1,start.pinch.distance),factor=Math.max(1,Math.min(5,scale))/start.scale;
-                        update(scale,p.x-v.width/2-(start.pinch.x-v.width/2-start.x)*factor,p.y-v.height/2-(start.pinch.y-v.height/2-start.y)*factor);
-                    }else if(start.pinch){gesture.current={pinch:null,scale:v.scale,x:v.x,y:v.y,dx:g.dx,dy:g.dy};}
-                    else update(v.scale,start.x+g.dx-start.dx,start.y+g.dy-start.dy);
-                },
-                onPanResponderRelease:function(e,g){if(Math.abs(g.dx)+Math.abs(g.dy)<8&&!((gesture.current||{}).pinch)){
-                    if(Date.now()-lastTap.current<280){var v=transform.current;update(v.scale>1?1:2.5,0,0);lastTap.current=0;}else lastTap.current=Date.now();}gesture.current=null;},
-                onPanResponderTerminationRequest:function(){return false;},onPanResponderTerminate:function(){gesture.current=null;}
-            })).current;
-            R.useEffect(function(){var live=true;update(1,0,0);if(props.uri)N.Image.getSize(props.uri,function(w,ht){if(live){transform.current.ratio=w/Math.max(1,ht);tick(function(n){return n+1;});}},function(){});return function(){live=false;};},[props.uri]);
-            var v=transform.current;
-            return h(N.Modal,{visible:!!props.uri,onRequestClose:props.close},h(N.SafeAreaView,{style:{flex:1,backgroundColor:'#111318'}},
-                h(N.View,{style:{flexDirection:'row',justifyContent:'space-between'}},h(Button,{title:t('chat_close'),onPress:props.close}),h(Button,{title:t('chat_reset'),onPress:function(){update(1,0,0);}}),
-                    h(Button,{title:saving[0]?t('chat_saving'):t('chat_save'),disabled:saving[0],onPress:function(){saving[1](true);env.request('saveMedia',{url:props.uri}).then(function(){status[1](t('chat_saved'));}).catch(function(){status[1](t('chat_save_permission_error'));}).then(function(){saving[1](false);});}})),
-                status[0]?label(status[0],{paddingHorizontal:12,color:'#a7b0bc'}):null,
-                h(N.View,Object.assign({style:{flex:1,overflow:'hidden',justifyContent:'center',alignItems:'center'},onLayout:function(e){v.width=e.nativeEvent.layout.width;v.height=e.nativeEvent.layout.height;update(v.scale,v.x,v.y);}},responder.panHandlers),
-                    props.uri?h(N.Image,{pointerEvents:'none',source:{uri:props.uri},resizeMode:'contain',style:{width:'100%',height:'100%',transform:[{translateX:v.x},{translateY:v.y},{scale:v.scale}]}}):null)));
-        }
-        return {RichText:RichText,Catalog:Catalog,Viewer:Viewer,MediaImage:MediaImage};
+        return {RichText:RichText,Catalog:Catalog,Viewer:presentation.Viewer,MediaImage:MediaImage};
     }
 """.trimIndent()
 }

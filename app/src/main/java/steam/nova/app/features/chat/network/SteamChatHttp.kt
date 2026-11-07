@@ -5,7 +5,6 @@ import steam.nova.app.features.chat.diagnostics.SteamChatDiagnostics
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.FormBody
 import steam.nova.app.features.chat.protocol.SteamChatProtocol as P
 import org.json.JSONObject
 import java.util.Base64
@@ -73,22 +72,20 @@ internal object SteamChatHttp {
         return result.optString("token").takeIf { it.isNotBlank() } ?: throw SteamChatFailure("AUTH_EXPIRED")
     }
 
-    /** Monica's private-chat read/ack transport; CM remains responsible for realtime and sends. */
+    /** Private-chat history and session queries. Read acknowledgements use the live CM connection. */
     fun friendMessages(account: SteamChatAccount, method: String, body: P.Writer): P.Fields {
-        require(method in setOf("GetActiveMessageSessions", "GetRecentMessages", "AckMessage"))
-        return protobuf(account, "IFriendMessagesService", method, body, method == "AckMessage")
+        require(method in setOf("GetActiveMessageSessions", "GetRecentMessages"))
+        return protobuf(account, "IFriendMessagesService", method, body)
     }
 
     fun nicknames(account: SteamChatAccount): P.Fields =
         protobuf(account, "IPlayerService", "GetNicknameList", P.Writer())
 
-    private fun protobuf(account: SteamChatAccount, service: String, method: String, body: P.Writer, post: Boolean = false): P.Fields {
+    private fun protobuf(account: SteamChatAccount, service: String, method: String, body: P.Writer): P.Fields {
         val encoded = Base64.getEncoder().encodeToString(body.build())
         val url = "https://api.steampowered.com/$service/$method/v1/".toHttpUrl().newBuilder()
             .addQueryParameter("access_token", account.token)
-        val request = if (post) Request.Builder().url(url.build())
-            .post(FormBody.Builder().add("input_protobuf_encoded", encoded).build())
-        else Request.Builder().url(url.addQueryParameter("input_protobuf_encoded", encoded).build())
+        val request = Request.Builder().url(url.addQueryParameter("input_protobuf_encoded", encoded).build())
         return SteamChatDiagnostics.trace("http.$service.$method") {
             client.newCall(request.build()).execute().use { response ->
                 val result = response.header("x-eresult")?.toIntOrNull()

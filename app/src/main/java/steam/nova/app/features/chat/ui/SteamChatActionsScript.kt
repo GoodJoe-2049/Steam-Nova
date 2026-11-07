@@ -34,7 +34,7 @@ internal object SteamChatActionsScript {
                 h(N.Image,{source:{uri:'https://steamcommunity.com/economy/'+(r.type===2?'sticker/':'emoticon/')+encodeURIComponent(r.name)},style:{width:22,height:22}}),label(String(r.count),{fontSize:12}));})),error[0]?label(error[0],{fontSize:12,color:'#e8a49d'}):null);}
         function Info(props){
             var state=env.useStore(),prefs=state.preferences[props.target.key]||{},query=R.useState(''),search=R.useState(false),error=R.useState(''),busy=R.useState(false);
-            var target=props.target,data=env.thread(target),profile=target.profile||{},title=target.title||profile.name||target.peer;
+            var target=props.target,data=env.thread(target),profile=env.profile(target.profile,target.peer),title=target.title||profile.name||target.peer;
             function preference(value){busy[1](true);env.preference(target,value).catch(function(e){error[1](ui.errorText(e.message));}).then(function(){busy[1](false);});}
             var results=data.messages.filter(function(m){return !m.deleted&&(m.text+' '+((m.profile||{}).name||m.sender)).toLowerCase().indexOf(query[0].toLowerCase())>=0;});
             return h(Panel,{title:search[0]?t('chat_search_messages'):t('chat_conversation_info'),close:function(){if(search[0])search[1](false);else props.close();}},
@@ -43,7 +43,7 @@ internal object SteamChatActionsScript {
                         ListFooterComponent:data.more?h(Button,{title:data.busy?t('chat_loading'):t('chat_load_earlier_history'),disabled:data.busy,onPress:function(){env.history(target,true);}}):null,
                         renderItem:function(row){return h(N.Pressable,{onPress:function(){props.jump(row.item.id);props.close();},style:{padding:16,borderBottomWidth:1,borderColor:'#343944'}},label((row.item.profile||{}).name||row.item.sender,{fontSize:12,color:'#66c0f4'}),label(row.item.text,{paddingTop:6},{numberOfLines:4}));}})):
                 h(N.ScrollView,null,label(title,{padding:20,fontSize:22,fontWeight:'600'}),
-                    target.peer?label(profile.game||(profile.online?t('chat_online'):t('chat_offline')),{paddingHorizontal:20,color:'#a7b0bc'}):null,
+                    target.peer?h(chatPresenceUi(env).Status,{profile:profile,fontSize:13,style:{paddingHorizontal:20}}):null,
                     error[0]?label(error[0],{padding:16,color:'#e8a49d'}):null,
                     h(SwitchRow,{title:t('chat_pin_conversation'),value:prefs.pinned,disabled:busy[0],onChange:function(value){preference({pinned:value});}}),
                     h(SwitchRow,{title:t('chat_mute_notifications'),value:prefs.muted,disabled:busy[0],onChange:function(value){preference({muted:value});}}),

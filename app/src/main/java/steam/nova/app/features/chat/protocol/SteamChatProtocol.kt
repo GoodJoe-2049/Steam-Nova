@@ -117,7 +117,8 @@ internal object SteamChatProtocol {
     }
 
     fun logon(token: String): ByteArray = Writer().number(1, 65_580).number(7, 4_294_966_596)
-        .number(32, 4).number(33, 2).text(80, "anonymous").text(103, token).build()
+        // MobileChat, retaining the verified web nonce/OS credential flow.
+        .number(32, 5).number(33, 2).text(80, "anonymous").text(103, token).build()
 
     fun decode(bytes: ByteArray): List<Packet> {
         require(bytes.size <= MAX_PACKET)

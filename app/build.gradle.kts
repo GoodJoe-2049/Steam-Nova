@@ -11,8 +11,8 @@ android {
         applicationId = "steam.nova.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 46
-        versionName = "1.5.1"
+        versionCode = 55
+        versionName = "1.6.0"
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -72,6 +72,8 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.constraintlayout)
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.dynamicanimation)
+    implementation(libs.lottie)
     implementation(libs.material)
     implementation(libs.miuix.ui)
     implementation(libs.miuix.nav)

@@ -25,6 +25,7 @@ internal class SteamChatNotifications(context: Context) {
     private val preferences get() = app.getSharedPreferences("millennium-chat-background", Context.MODE_PRIVATE)
     private val notified = linkedSetOf<String>()
     private val noticeIds = hashSetOf<Int>()
+    private val noticeTimes = hashMapOf<Int, Long>()
 
     private fun channel() {
         manager.createNotificationChannel(NotificationChannel(CHANNEL, ModuleLocalization.text(app, R.string.chat_notification_channel), NotificationManager.IMPORTANCE_HIGH))
@@ -61,10 +62,13 @@ internal class SteamChatNotifications(context: Context) {
             if (!enabled() || !permitted()) return
             val dedup = "$account:$key:${message.getString("id")}"
             if (dedup in notified) return
+            val id = noticeId(account, key)
+            val timestamp = message.optLong("timestamp")
+            // A delayed older message must not replace a newer notification or move its read cutoff back.
+            if (timestamp < (noticeTimes[id] ?: 0)) return
             val launch = app.packageManager.getLaunchIntentForPackage(app.packageName) ?: return
             launch.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 .putExtra("millennium_chat_target", key).putExtra("millennium_chat_account", account)
-            val id = noticeId(account, key)
             val click = PendingIntent.getActivity(app, id, launch, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             val title = message.optJSONObject("profile")?.optString("name").orEmpty().ifBlank { message.optString("sender") }
             val style = NotificationCompat.MessagingStyle(Person.Builder().setName(ModuleLocalization.text(app, R.string.chat_notification_self)).build())
@@ -75,7 +79,7 @@ internal class SteamChatNotifications(context: Context) {
                 .setVisibility(NotificationCompat.VISIBILITY_PRIVATE).build()
             // A private tag avoids cancelling Steam's own notifications with the same numeric ID.
             manager.notify(TAG, id, notice)
-            noticeIds.add(id); notified.add(dedup)
+            noticeIds.add(id); noticeTimes[id] = timestamp; notified.add(dedup)
             while (notified.size > 500) notified.remove(notified.first())
         }.onFailure { SteamChatDiagnostics.failure("notification.post", it) }
     }
@@ -84,11 +88,17 @@ internal class SteamChatNotifications(context: Context) {
         val id = noticeId(account, key)
         runCatching { manager.cancel(TAG, id) }
         noticeIds.remove(id)
+        noticeTimes.remove(id)
+    }
+
+    fun cancelThrough(account: String, key: String, timestamp: Long) {
+        val time = noticeTimes[noticeId(account, key)] ?: return
+        if (time <= timestamp) cancel(account, key)
     }
 
     fun clear() {
         noticeIds.forEach { id -> runCatching { manager.cancel(TAG, id) } }
-        noticeIds.clear(); notified.clear()
+        noticeIds.clear(); noticeTimes.clear(); notified.clear()
     }
 
     private fun noticeId(account: String, key: String) = "$account:$key".hashCode() and 0x3fffffff

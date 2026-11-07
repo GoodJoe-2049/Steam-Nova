@@ -6,9 +6,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.provider.OpenableColumns
-import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
-import okio.BufferedSink
 import java.util.concurrent.ConcurrentHashMap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -21,7 +19,6 @@ import okhttp3.MultipartBody
 import okhttp3.Request
 import org.json.JSONObject
 import java.util.UUID
-import java.security.MessageDigest
 
 /** Only URIs returned by our own document picker may enter this upload path. */
 internal class SteamChatAttachments(private val context: Context) {
@@ -82,59 +79,15 @@ internal class SteamChatAttachments(private val context: Context) {
             require(bounds.outWidth in 1..20000 && bounds.outHeight in 1..20000 && bounds.outMimeType in SUPPORTED)
         }
         require(mime in SUPPORTED)
-        val target = SteamChatRepository.Target.parse(args)
-        val session = UUID.randomUUID().toString().replace("-", "").take(24)
-        val sha = MessageDigest.getInstance("SHA-1").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 255) }
-        val name = item.name.ifBlank { UUID.randomUUID().toString() }
-        val common = linkedMapOf("sessionid" to session, "l" to "english", "file_name" to name, "file_sha" to sha,
-            "file_type" to mime, "file_image_width" to bounds.outWidth.coerceAtLeast(0).toString(), "file_image_height" to bounds.outHeight.coerceAtLeast(0).toString())
-        fun post(path: String, fields: Map<String, String>): JSONObject {
-            repository.checkAccount()
-            val body = MultipartBody.Builder().setType(MultipartBody.FORM)
-            fields.forEach { (key, value) -> body.addFormDataPart(key, value) }
-            return SteamChatHttp.json(Request.Builder().url("https://steamcommunity.com/chat/$path/")
-                .header("Cookie", "${SteamChatHttp.cookie(repository.account)}; sessionid=$session")
-                .header("Origin", "https://steamcommunity.com").header("Referer", "https://steamcommunity.com/chat/")
-                .post(body.build()).build()).also { require(it.optInt("success") == 1 || it.optBoolean("success")) }
-        }
-        val begin = post("beginfileupload", common + ("file_size" to bytes.size.toString()))
-        val upload = begin.getJSONObject("result")
-        require(upload.optBoolean("use_https") || upload.optInt("use_https") == 1)
-        val url = "https://${upload.getString("url_host")}${upload.getString("url_path")}".toHttpUrl()
-        require(url.port == 443 && url.username.isEmpty() && url.password.isEmpty())
-        require(listOf(".steamcontent.com", ".steamusercontent.com", ".amazonaws.com", ".steampowered.com").any(url.host::endsWith))
-        val uploadBody = object : RequestBody() {
-            override fun contentType() = mime.toMediaType()
-            override fun contentLength() = bytes.size.toLong()
-            override fun writeTo(sink: BufferedSink) {
-                var offset = 0
-                while (offset < bytes.size) {
-                    repository.checkAccount()
-                    val count = minOf(64 * 1024, bytes.size - offset)
-                    sink.write(bytes, offset, count); offset += count
-                    uploads[key] = (offset.toLong() * 95 / bytes.size.coerceAtLeast(1)).toInt()
-                }
-            }
-        }
-        val cloud = Request.Builder().url(url).put(uploadBody)
-        val headers = upload.getJSONArray("request_headers")
-        for (i in 0 until headers.length()) {
-            val header = headers.getJSONObject(i)
-            val field = header.getString("name")
-            if (field.lowercase() !in setOf("cookie", "host", "content-length", "connection")) cloud.header(field, header.getString("value"))
-        }
-        repository.checkAccount()
-        mediaClient.newCall(cloud.build()).execute().use { if (!it.isSuccessful) throw SteamChatFailure("UPLOAD_FAILED") }
-        val recipient = target.peer?.let { mapOf("friend_steamid" to it) }
-            ?: mapOf("chat_group_id" to target.group!!, "chat_id" to target.room!!)
-        // Steam's commit sends the attachment itself. Do not also call SendMessage with its URL.
-        val committed = post("commitfileupload", common + recipient + mapOf("success" to "1", "spoiler" to if (args.optBoolean("spoiler")) "1" else "0",
-            "ugcid" to upload.getString("ugcid"), "timestamp" to begin.getString("timestamp"), "hmac" to begin.getString("hmac")))
-        val result = committed.getJSONObject("result")
-        require(result.optInt("success") == 1 || result.optBoolean("success"))
-        uploads[key] = 100
+        if (bytes.isEmpty()) throw SteamChatFailure("ATTACHMENT_REJECTED")
+        val result = SteamChatAttachmentUpload(repository).send(
+            bytes = bytes, filename = item.name, mime = mime,
+            width = bounds.outWidth.coerceAtLeast(0), height = bounds.outHeight.coerceAtLeast(0),
+            target = SteamChatRepository.Target.parse(args), spoiler = args.optBoolean("spoiler"),
+            progress = { uploads[key] = it },
+        )
         synchronized(selected) { selected.remove(key) }
-        return JSONObject().put("url", result.getJSONObject("details").getString("url"))
+        return result
     }
 
     fun uploadAvatar(repository: SteamChatRepository, args: JSONObject): JSONObject {

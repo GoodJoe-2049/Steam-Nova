@@ -7,22 +7,24 @@ internal object SteamChatStoreScript {
     function chatEnvironment(require){
         if(chatEnvironments)return chatEnvironments;
         var React=require(115),RN=require(16),listeners=[],generation=0,running=false,pollTimer=null,refreshPromise=null,groupsPromise=null;
-        var saveTimers={},typingSent={},visibilityVersion=0,state=fresh(''),effectListeners=[];
+        var saveTimers={},typingSent={},visibilityVersion=0,state=fresh(''),effectListeners=[],visibleKey='',presence=chatPresenceState();
+        var reads=chatReadReceipts({state:function(){return state;},request:request,emit:emit,running:function(){return running&&RN.AppState.currentState==='active';}});
         function roomEffect(message){if(message&&!message.deleted&&!message.pending&&!message.failed)effectListeners.slice().forEach(function(fn){try{fn(message);}catch(ignore){}});}
         function subscribeRoomEffects(fn){effectListeners.push(fn);return function(){effectListeners=effectListeners.filter(function(value){return value!==fn;});};}
         function fresh(id){return {account:id,sessions:[],groups:[],friends:null,catalog:null,preferences:{},background:{},self:null,profiles:{},nicknames:null,hydrated:false,groupsLoaded:false,refreshing:false,
-            threads:{},typing:{},voice:{phase:'idle'},openTarget:null,loading:false,error:'',groupsError:false,groupsLoading:false,connected:false,revision:0,syncRevision:0};}
+            threads:{},typing:{},readState:{},voice:{phase:'idle'},openTarget:null,loading:false,error:'',groupsError:false,groupsLoading:false,connected:false,revision:0,syncRevision:0};}
         function emit(){state.revision++;listeners.slice().forEach(function(fn){fn(state.revision);});}
-        function remember(value){if(value&&value.id)state.profiles[value.id]=Object.assign({},state.profiles[value.id]||{},value);}
+        function remember(value,live){if(value&&value.id){if(live!==false)presence.remember(value);state.profiles[value.id]=Object.assign({},state.profiles[value.id]||{},value);}}
         function profile(value,id){
             var key=id||(value||{}).id,p=Object.assign({},state.profiles[key]||{},value||{});
             var persona=p.personaName||p.name||key||'?',nickname=state.nicknames!==null?(state.nicknames[key]||''):(p.nickname||'');
-            return Object.assign({},p,{id:key,personaName:persona,nickname:nickname,name:nickname||persona});
+            return presence.apply(Object.assign({},p,{id:key,personaName:persona,nickname:nickname,name:nickname||persona}));
         }
-        function hydrateProfiles(value){
+        function hydrateProfiles(value,live){
+            if(live!==false)presence.accept(value.presenceState);
             if(value.nicknames&&typeof value.nicknames==='object')state.nicknames=value.nicknames;
-            (value.sessions||[]).forEach(function(row){remember(row.profile);});
-            remember(value.self);remember(value.peerProfile);
+            (value.sessions||[]).forEach(function(row){remember(row.profile,live);});
+            remember(value.self,live);remember(value.peerProfile,live);
         }
         function request(operation,args,account){
             var id=account||state.account;if(!id)return Promise.reject(new Error('LOGIN_REQUIRED'));
@@ -36,7 +38,7 @@ internal object SteamChatStoreScript {
         function account(id){
             if(state.account===id)return;
             var old=state.account;Object.keys(saveTimers).forEach(function(k){clearTimeout(saveTimers[k]);});saveTimers={};
-            generation++;running=false;clearTimeout(pollTimer);pollTimer=null;refreshPromise=null;groupsPromise=null;state=fresh(id);
+            generation++;running=false;reads.reset();visibleKey='';clearTimeout(pollTimer);pollTimer=null;refreshPromise=null;groupsPromise=null;state=fresh(id);presence=chatPresenceState();
             if(chatEnvironments){chatEnvironments.voiceCurrent=state.voice;chatEnvironments.voiceExpanded=false;chatEnvironments.voiceThread='';}emit();
             if(old)request('pause',{},old).catch(function(){});
         }
@@ -45,7 +47,7 @@ internal object SteamChatStoreScript {
             return state.threads[target.key];
         }
         function merge(target,incoming){
-            var data=thread(target),map={};data.messages.concat(incoming).forEach(function(m){map[m.id]=m;});
+            var data=thread(target),map={};data.messages.concat(incoming).forEach(function(m){if(data.hidden&&data.hidden[m.id])m=Object.assign({},m,{locallyHidden:true,text:'',reactions:[]});map[m.id]=m;});
             var list=Object.keys(map).map(function(k){return map[k];});
             list.filter(function(m){return m.pending||m.failed;}).forEach(function(local){
                 var pending=list.filter(function(m){return (m.pending||m.failed)&&m.text===local.text;});
@@ -60,7 +62,7 @@ internal object SteamChatStoreScript {
             data.cachePromise=request('threadCache',target).then(function(value){
                 if(id!==state.account)return;
                 // In-flight UI edits win over a slower disk response.
-                merge(target,value.messages||[]);if(!data.edited)data.draft=value.draft||'';
+                data.hidden=Object.assign({},value.hidden||{},data.hidden||{});merge(target,value.messages||[]);if(!data.edited)data.draft=value.draft||'';
                 data.position=data.position||value.position||null;if(!data.loaded)data.more=!!value.more;
             }).catch(function(){}).then(function(){if(id===state.account){data.cached=true;data.cachePromise=null;emit();}});
             return data.cachePromise;
@@ -79,7 +81,7 @@ internal object SteamChatStoreScript {
             if(!state.account||!running)return Promise.resolve();if(groupsPromise)return groupsPromise;
             var epoch=generation;state.groupsLoading=!state.groupsLoaded;
             groupsPromise=request('groups').then(function(groups){
-                if(epoch!==generation)return;state.groups=groups;state.groupsLoaded=true;state.groupsError=false;state.connected=true;
+                if(epoch!==generation)return;state.groups=reads.mergeGroups(groups);state.groupsLoaded=true;state.groupsError=false;state.connected=true;
             }).catch(function(){if(epoch===generation)state.groupsError=true;})
                 .then(function(){if(epoch===generation){state.groupsLoading=false;groupsPromise=null;emit();}});return groupsPromise;
         }
@@ -88,7 +90,7 @@ internal object SteamChatStoreScript {
             if(manual===true){state.refreshing=true;emit();}if(refreshPromise)return refreshPromise;
             var epoch=generation;state.loading=!state.hydrated;emit();
             refreshPromise=request('snapshot').then(function(data){
-                if(epoch!==generation)return;hydrateProfiles(data);state.sessions=data.sessions;state.hydrated=true;if(data.self&&(data.self.avatar||!state.self))state.self=data.self;state.error='';
+                if(epoch!==generation)return;hydrateProfiles(data);reads.hydrate(data.readState);state.sessions=reads.mergeRows(data.sessions,state.sessions);state.hydrated=true;if(data.self&&(data.self.avatar||!state.self))state.self=data.self;state.error='';
             }).catch(function(e){if(epoch===generation)state.error=e.message;})
                 .then(function(){if(epoch===generation){state.loading=false;state.refreshing=false;refreshPromise=null;emit();}});return refreshPromise;
         }
@@ -97,8 +99,12 @@ internal object SteamChatStoreScript {
             delete state.typing[m.key];if(known)return;roomEffect(m);
             if(target.peer){var row=state.sessions.find(function(s){return s.key===m.key;});
                 if(!row){row={key:m.key,kind:'private',peer:target.peer,profile:m.sender===target.peer?m.profile:{id:target.peer,name:target.peer},unread:0};state.sessions.unshift(row);}
-                row.timestamp=m.timestamp;row.preview=m.text;if(m.sender!==state.account)row.unread=(row.unread||0)+1;
-            }else state.groups.forEach(function(g){g.rooms.forEach(function(r){if(r.key===m.key){r.timestamp=m.timestamp;r.preview=m.text;if(m.sender!==state.account)r.unread=1;}});});
+                if(!row.timestamp||m.timestamp>=row.timestamp){row.timestamp=m.timestamp;row.preview=m.text;}
+                if(m.sender!==state.account&&!reads.isRead(m))row.unread=(row.unread||0)+1;
+            }else state.groups.forEach(function(g){g.rooms.forEach(function(r){if(r.key===m.key){
+                if(!r.timestamp||m.timestamp>=r.timestamp){r.timestamp=m.timestamp;r.preview=m.text;}
+                if(m.sender!==state.account&&!reads.isRead(m))r.unread=(r.unread||0)+1;
+            }});});
         }
         function reaction(e){
             var data=thread(targetFor(e.key));data.messages.forEach(function(m){
@@ -114,15 +120,18 @@ internal object SteamChatStoreScript {
             request('events').then(function(events){
                 if(epoch!==generation)return;var resync=false;
                 events.forEach(function(e){
+                    if(e.type==='presence')presence.accept(e);
+                    if(e.presenceEpoch)presence.reset(e.presenceEpoch);
                     if(e.type==='voice')applyVoice(e.value);
                     if(e.type==='message')onMessage(e.message);
+                    if(e.type==='read'||e.type==='readState')reads.event(e);
                     if(e.type==='typing')state.typing[e.key]=Date.now()+6000;
                     if(e.type==='reaction')reaction(e);
                     if(e.type==='modified')thread(targetFor(e.key)).messages.forEach(function(m){e.changes.forEach(function(change){if(m.timestamp===change.timestamp&&m.ordinal===change.ordinal)m.deleted=change.deleted;});});
                     if(e.type==='threadChanged')history(targetFor(e.key),false);
                     if(e.type==='openThread')state.openTarget=targetFor(e.key);
                     if(e.type==='nicknames')state.nicknames=e.names||{};
-                    if(e.type==='connected'){state.connected=true;state.error='';}
+                    if(e.type==='connected'){state.connected=true;state.error='';reads.resume();}
                     if(e.type==='resync'||e.type==='connected')resync=true;
                     if(e.type==='disconnected'){state.connected=false;state.error='OFFLINE';}
                 });
@@ -133,10 +142,11 @@ internal object SteamChatStoreScript {
         }
         function start(id){
             account(id);if(!id)return;if(running)return;running=true;var epoch=++generation;pollTimer=-1;
+            reads.resume();
             request('visibility',{foreground:true,version:++visibilityVersion}).catch(function(){});
             request('cache').then(function(value){if(epoch!==generation)return;
-                hydrateProfiles(value);
-                if(!state.sessions.length)state.sessions=value.sessions||[];if(!state.groups.length)state.groups=value.groups||[];
+                hydrateProfiles(value,false);reads.hydrate(value.readState);
+                if(!state.sessions.length)state.sessions=reads.mergeRows(value.sessions,[]);if(!state.groups.length)state.groups=reads.mergeGroups(value.groups);
                 if(Array.isArray(value.sessions))state.hydrated=true;if(Array.isArray(value.groups))state.groupsLoaded=true;
                 if(value.self&&(value.self.avatar||!state.self))state.self=value.self;
                 state.preferences=value.preferences||{};state.background=value.background||{};state.syncRevision++;emit();
@@ -144,21 +154,25 @@ internal object SteamChatStoreScript {
         }
         function pause(){
             Object.keys(saveTimers).forEach(function(key){saveThread(targetFor(key),true);});
-            running=false;generation++;refreshPromise=null;groupsPromise=null;clearTimeout(pollTimer);pollTimer=null;state.loading=false;state.refreshing=false;state.groupsLoading=false;
+            running=false;reads.pause();visibleKey='';generation++;refreshPromise=null;groupsPromise=null;clearTimeout(pollTimer);pollTimer=null;state.loading=false;state.refreshing=false;state.groupsLoading=false;
             Object.keys(state.threads).forEach(function(k){state.threads[k].busy=false;state.threads[k].loadingOlder=false;});
             if(state.account)request('visibility',{foreground:false,key:'',version:++visibilityVersion}).catch(function(){});
         }
-        function visible(target){if(state.account)request('visibility',{foreground:running,key:target?target.key:'',version:++visibilityVersion}).catch(function(){});}
+        function visible(target){visibleKey=target?target.key:'';if(state.account)request('visibility',{foreground:running,key:visibleKey,version:++visibilityVersion}).catch(function(){});}
         function history(target,older){
-            var data=thread(target);if(data.busy)return Promise.resolve();var epoch=generation;
+            var data=thread(target);if(data.busy)return data.historyPromise||Promise.resolve();var epoch=generation;
             data.busy=true;data.loadingOlder=!!older;data.error='';emit();
-            return cachedThread(target).then(function(){
+            data.historyPromise=cachedThread(target).then(function(){
                 if(epoch!==generation)throw new Error('STALE_REQUEST');
                 var confirmed=data.messages.filter(function(m){return !m.pending&&!m.failed;});
                 return request('history',Object.assign({},target,{before:older&&confirmed.length?confirmed[confirmed.length-1]:undefined}));
-            }).then(function(result){if(epoch!==generation)return;hydrateProfiles(result);merge(target,result.messages);if(result.self&&(result.self.avatar||!state.self))state.self=result.self;if(older||!data.loaded)data.more=result.more;data.loaded=true;})
+            }).then(function(result){if(epoch!==generation)return;hydrateProfiles(result);merge(target,result.messages);
+                if(!older){var page=(result.messages||[]).filter(function(m){return !m.pending&&!m.failed;}).sort(function(a,b){return a.timestamp-b.timestamp||a.ordinal-b.ordinal;});
+                    data.latestFloor=page.length?{timestamp:page[0].timestamp,ordinal:page[0].ordinal}:{timestamp:0,ordinal:0};}
+                if(result.self&&(result.self.avatar||!state.self))state.self=result.self;if(older||!data.loaded)data.more=result.more;data.loaded=true;})
                 .catch(function(e){if(epoch===generation)data.error=e.message;})
-                .then(function(){if(epoch===generation){data.busy=false;data.loadingOlder=false;emit();}});
+                .then(function(){if(epoch===generation){data.busy=false;data.loadingOlder=false;data.historyPromise=null;emit();}});
+            return data.historyPromise;
         }
         function send(target,text){
             var id=state.account,data=thread(target),local='local:'+Date.now()+':'+Math.random();
@@ -172,11 +186,26 @@ internal object SteamChatStoreScript {
             if(id===state.account){var data=thread(target);data.messages=data.messages.filter(function(m){return m.id!==item.id;});emit();}
         });}
         function acknowledge(target){
-            var data=thread(target),latest=data.messages.find(function(m){return !m.pending&&!m.failed;});if(!latest||data.ack>=latest.timestamp)return;
-            var id=state.account;data.ack=latest.timestamp;
-            request('ack',Object.assign({},target,{timestamp:latest.timestamp})).then(function(){if(id!==state.account)return;
-                state.sessions.forEach(function(s){if(s.key===target.key)s.unread=0;});state.groups.forEach(function(g){g.rooms.forEach(function(r){if(r.key===target.key)r.unread=0;});});emit();
-            }).catch(function(){if(id===state.account)data.ack=0;});
+            if(!running||visibleKey!==target.key||RN.AppState.currentState!=='active')return;
+            var data=thread(target),latest=data.messages.find(function(m){return !m.pending&&!m.failed;});
+            if(latest&&data.loaded)reads.mark(target,latest.timestamp);
+        }
+        function acknowledgeVisible(target,ids){
+            if(!running||visibleKey!==target.key||RN.AppState.currentState!=='active')return;
+            var data=thread(target);if(!data.loaded||!data.latestFloor)return;
+            var visible={};(ids||[]).forEach(function(id){visible[id]=true;});
+            var message=data.messages.find(function(m){return visible[m.id]&&!m.pending&&!m.failed&&!m.system&&!m.deleted;});
+            if(message)reads.mark(target,message);
+        }
+        function unreadCount(target){var row=state.sessions.find(function(r){return r.key===target.key;});
+            state.groups.some(function(g){var found=(g.rooms||[]).find(function(r){return r.key===target.key;});if(found){row=found;return true;}return false;});
+            return row?Math.max(0,reads.project(row).unread||0):0;
+        }
+        function needsLatest(target){var data=thread(target),timestamp=0;
+            state.sessions.forEach(function(r){if(r.key===target.key)timestamp=r.timestamp||0;});
+            state.groups.forEach(function(g){(g.rooms||[]).forEach(function(r){if(r.key===target.key)timestamp=r.timestamp||0;});});
+            var latest=data.messages.find(function(m){return !m.pending&&!m.failed;});
+            return !data.loaded||!!(timestamp&&(!latest||latest.timestamp<timestamp));
         }
         function load(kind,force){
             var id=state.account;if(state[kind]&&!force)return Promise.resolve(state[kind]);
@@ -184,12 +213,16 @@ internal object SteamChatStoreScript {
             return request(kind).then(function(value){if(id===state.account){if(kind==='friends')value.forEach(remember);state[kind]=value;emit();}return value;});
         }
         function typing(target){if(!target.peer||Date.now()-(typingSent[target.key]||0)<4000)return;typingSent[target.key]=Date.now();request('typing',target).catch(function(){});}
+        function deleteMedia(target,item){return request(target.peer?'deleteLocalMedia':'deleteMessage',Object.assign({},target,item)).then(function(){
+            var data=thread(target);if(target.peer){data.hidden=data.hidden||{};data.hidden[item.id]=true;}
+            data.messages.forEach(function(m){if(m.id===item.id){if(target.peer)m.locallyHidden=true;else m.deleted=true;m.text='';m.reactions=[];}});emit();
+        });}
         function useStore(){var tick=React.useState(0)[1];React.useEffect(function(){listeners.push(tick);return function(){listeners=listeners.filter(function(fn){return fn!==tick;});};},[]);return state;}
         function applyVoice(value){if(value&&Number(value.revision||0)>=Number(state.voice.revision||0)){state.voice=value;
             (value.profiles||[]).forEach(remember);if(chatEnvironments)chatEnvironments.voiceCurrent=value;}}
         function voiceUpdate(value){applyVoice(value);emit();}
         chatEnvironments={currentAccount:function(){return state.account;},React:React,RN:RN,require:require,useStore:useStore,request:request,start:start,pause:pause,visible:visible,
-            reset:account,refresh:refresh,history:history,thread:thread,send:send,discard:discard,acknowledge:acknowledge,load:load,emit:emit,subscribeRoomEffects:subscribeRoomEffects,
+            reset:account,refresh:refresh,history:history,thread:thread,send:send,discard:discard,deleteMedia:deleteMedia,acknowledge:acknowledge,acknowledgeVisible:acknowledgeVisible,unreadCount:unreadCount,needsLatest:needsLatest,load:load,emit:emit,subscribeRoomEffects:subscribeRoomEffects,
             preference:preference,saveThread:saveThread,editDraft:editDraft,typing:typing,targetFor:targetFor,profile:profile,voiceUpdate:voiceUpdate};return chatEnvironments;
     }
 """.trimIndent()

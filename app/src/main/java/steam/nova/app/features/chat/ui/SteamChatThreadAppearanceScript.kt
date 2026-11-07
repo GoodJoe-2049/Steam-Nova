@@ -66,6 +66,7 @@ internal object SteamChatThreadAppearanceScript {
                         accessibilityLabel:t('chat_conversation_info'),style:{flex:1,minWidth:0,flexDirection:'row',alignItems:'center',minHeight:48}},
                         h(voice.HeaderIndicator,{target:props.target}),h(Avatar,{profile:p,size:42}),h(N.View,{style:{flex:1,minWidth:0,marginLeft:12,opacity:p.online===false||p.personaState===3||p.personaState===4?0.5:1}},
                             text(props.title,{color:color,fontWeight:'700'},{numberOfLines:1}),
+                            props.target.peer?h(chatPresenceUi(env).Status,{profile:p,typing:props.typing?props.status:'',fontSize:12,color:color}):
                             props.status?text(props.status,{fontSize:12,lineHeight:16,color:color},{numberOfLines:1}):null)),
                     h(IconButton,{name:'voice_call',title:t(calling?'chat_voice_leave':'chat_voice_call'),color:calling?'#c8f1c2':undefined,onPress:props.voice}),
                     h(IconButton,{name:'invite_to_chat',title:t('chat_invite_to_chat'),onPress:props.invite})));

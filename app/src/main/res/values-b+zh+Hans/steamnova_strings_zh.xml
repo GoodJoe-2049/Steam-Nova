@@ -249,6 +249,9 @@
     <string name="chat_emotes">"表情包"</string>
     <string name="chat_emoticons">"表情"</string>
     <string name="chat_enable">"启用"</string>
+    <string name="chat_error_attachment_rejected">"Steam 拒绝了这份附件，请尝试其他图片或重新登录"</string>
+    <string name="chat_error_attachment_upload">"附件上传失败，请重试"</string>
+    <string name="chat_error_attachment_unconfirmed">"无法确认附件是否送达，再次发送前请先检查聊天记录"</string>
     <string name="chat_error_attachment_size">"附件不能超过 30 MB"</string>
     <string name="chat_error_avatar_size">"群头像不能超过 5 MB"</string>
     <string name="chat_error_connection">"连接暂时不可用，请重试"</string>
@@ -276,7 +279,7 @@
     <string name="chat_invite_members">"邀请成员"</string>
     <string name="chat_invite_this_friend_confirm">"邀请此好友？"</string>
     <string name="chat_invite_to_chat">"邀请加入聊天"</string>
-    <string name="chat_jump_to_latest">"跳到最新消息 ↓"</string>
+    <string name="chat_jump_to_latest">"跳转到最新消息"</string>
     <string name="chat_kick_member">"移出成员"</string>
     <string name="chat_kick_members">"移出成员"</string>
     <string name="chat_links">"链接"</string>
@@ -315,6 +318,12 @@
     <string name="chat_notification_self">"我"</string>
     <string name="chat_offline">"离线"</string>
     <string name="chat_online">"在线"</string>
+    <string name="chat_platform_mobile">移动端</string>
+    <string name="chat_platform_big_picture">大屏幕模式</string>
+    <string name="chat_platform_vr">虚拟现实</string>
+    <string name="chat_platform_handheld">掌机</string>
+    <string name="chat_platform_web">网页端</string>
+    <string name="chat_platform_desktop">桌面端</string>
     <string name="chat_open">"打开"</string>
     <string name="chat_open_game_invitation">"打开游戏邀请"</string>
     <string name="chat_other">"其他"</string>
@@ -481,4 +490,27 @@
     <string name="chat_voice_error_interrupted">其他应用中断了通话音频。</string>
     <string name="chat_voice_error_background">Steam 已切到后台，通话已结束。</string>
     <string name="chat_voice_error_failed">无法完成通话，请检查网络后重试。</string>
+    <plurals name="chat_jump_unread">
+        <item quantity="other">%d 条未读消息，跳转到最新消息</item>
+    </plurals>
+    <string name="chat_media_copy_link">"复制链接"</string>
+    <string name="chat_media_save_gallery">"保存到相册"</string>
+    <string name="chat_media_save_downloads">"保存到下载文件夹"</string>
+    <string name="chat_media_share">"分享"</string>
+    <string name="chat_media_forward">"转发"</string>
+    <string name="chat_media_download">"下载视频"</string>
+    <string name="chat_media_cancel_download">"取消下载"</string>
+    <string name="chat_media_play">"播放"</string>
+    <string name="chat_media_pause">"暂停"</string>
+    <string name="chat_media_mute">"静音"</string>
+    <string name="chat_media_unmute">"取消静音"</string>
+    <string name="chat_media_view_video">"全屏查看视频"</string>
+    <string name="chat_media_seek">"视频播放位置"</string>
+    <string name="chat_media_unknown_size">"大小未知"</string>
+    <string name="chat_media_downloading">"视频正在下载，请完成后重试"</string>
+    <string name="chat_media_failed">"媒体加载失败，请点击播放重试"</string>
+    <string name="chat_media_seek_hint">左右滑动以调整速度</string>
+    <string name="chat_media_delete_local">"仅从本机移除此消息？其他设备和对方的消息仍会保留"</string>
+    <string name="chat_media_search">"搜索会话"</string>
+    <string name="chat_media_send">"发送"</string>
 </resources>

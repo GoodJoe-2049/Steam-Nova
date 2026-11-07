@@ -7,7 +7,7 @@ internal object SteamChatUiScript {
         var env=chatEnvironment(require);
         if(env.ui)return env.ui;
         var R=env.React,N=env.RN,h=R.createElement;
-        var t=moduleText;
+        var t=moduleText,Presence=chatPresenceUi(env).Status;
         function colors(){
             var theme=require(1590).useTheme(),c=theme.color||{};
             return {bg:(c.background||{}).primary||'#1b1e24',panel:(c.background||{}).secondary||'#23262e',
@@ -18,9 +18,15 @@ internal object SteamChatUiScript {
             if(code==='LOGIN_REQUIRED'||code==='AUTH_EXPIRED'||code==='ACCOUNT_CHANGED')return t('chat_error_sign_in');
             if(code==='IMAGE_TOO_LARGE'||code==='ATTACHMENT_TOO_LARGE')return t('chat_error_attachment_size');
             if(code==='REQUEST_REJECTED')return t('chat_error_rejected');
+            if(code==='ATTACHMENT_REJECTED'||code==='ATTACHMENT_SESSION_REJECTED')return t('chat_error_attachment_rejected');
+            if(code==='ATTACHMENT_UPLOAD_FAILED'||code==='ATTACHMENT_RESPONSE_INVALID')return t('chat_error_attachment_upload');
+            if(code==='ATTACHMENT_UNCONFIRMED')return t('chat_error_attachment_unconfirmed');
             if(code==='AVATAR_TOO_LARGE')return t('chat_error_avatar_size');
             if(code==='IMAGE_EXPIRED')return t('chat_error_select_image');
             if(code==='RATE_LIMITED')return t('chat_error_rate_limit');
+            if(code==='MEDIA_FAILED')return t('chat_media_failed');
+            if(code==='MEDIA_DOWNLOADING')return t('chat_media_downloading');
+            if(code==='SAVE_PERMISSION_REQUIRED')return t('chat_save_permission_error');
             return t('chat_error_connection');
         }
         function Button(props){
@@ -54,25 +60,38 @@ internal object SteamChatUiScript {
             var state=env.useStore(),target=props.target,data=env.thread(target),c=colors(),skin=chatThreadAppearance(env,components);
             skin.useFonts();
             var draft=R.useState(data.draft||''),picker=R.useState(false),attachment=R.useState(null),busy=R.useState(false),error=R.useState(''),viewer=R.useState(null);
-            var menu=R.useState(null),info=R.useState(false),admin=R.useState(false),bottom=R.useState(true),spoiler=R.useState(false),progress=R.useState(0);
+            var menu=R.useState(null),info=R.useState(false),admin=R.useState(false),spoiler=R.useState(false),progress=R.useState(0);
             var nearBottom=R.useRef(true),mounted=R.useRef(true),focused=require(1366).useIsFocused(),list=R.useRef(null),restored=R.useRef(false),jump=R.useRef(null),progressTimer=R.useRef(null),uncertain=R.useRef(false);
             var input=R.useRef(null),inputHeight=R.useState(52),attachMenu=R.useState(false),createGroup=R.useState(false),composerHeight=R.useState(69);
+            var restoreReady=R.useState(false),restorePending=R.useRef(''),restoreIssued=R.useRef(false),restoreTimer=R.useRef(null);
+            var visibleMedia=R.useState({}),viewableIds=R.useRef('');
+            var scroll=chatScrollControl(env,{target:target,data:data,focused:focused,ready:restoreReady[0],list:list,nearBottom:nearBottom,syncRevision:state.syncRevision,
+                blocked:!!(menu[0]||info[0]||admin[0]||viewer[0]||createGroup[0]||picker[0]||attachMenu[0])});
             function closePopup(){picker[1](false);attachMenu[1](false);}
             R.useEffect(function(){if(focused&&state.openTarget){var next=state.openTarget;state.openTarget=null;
                 props.navigation.setParams({target:next,account:state.account});env.emit();}},[focused,state.openTarget]);
             R.useEffect(function(){mounted.current=true;env.history(target,false);return function(){mounted.current=false;clearTimeout(progressTimer.current);env.saveThread(target,true);env.visible(null);};},[target.key]);
             R.useEffect(function(){if(data.cached&&!data.edited)draft[1](data.draft||'');},[data.cached]);
             R.useEffect(function(){env.visible(focused?target:null);if(focused&&state.connected)env.history(target,false);return function(){env.visible(null);};},[focused,state.connected,state.syncRevision]);
-            R.useEffect(function(){if(focused&&nearBottom.current)env.acknowledge(target);},[focused,data.messages.length]);
-            function scrollTo(id){var index=data.messages.findIndex(function(m){return m.id===id;});if(index<0||!list.current)return;
-                jump.current={index:index,attempts:0};list.current.scrollToIndex({index:index,animated:false,viewPosition:0.5});}
-            R.useEffect(function(){if(restored.current||!data.cached||!data.messages.length)return;restored.current=true;
-                if(data.position&&data.position.id&&!data.position.bottom){nearBottom.current=false;bottom[1](false);var timer=setTimeout(function(){scrollTo(data.position.id);},40);return function(){clearTimeout(timer);};}
-            },[data.cached,data.messages.length]);
-            var viewability=R.useRef(function(result){var item=result.viewableItems&&result.viewableItems[0];if(!restored.current||!item)return;
-                data.position={id:item.item.id,bottom:nearBottom.current};env.saveThread(target,false);}).current;
+            function scrollTo(id){var index=data.messages.findIndex(function(m){return m.id===id;});if(index<0||!list.current)return false;
+                jump.current={id:id,index:index,attempts:0};list.current.scrollToIndex({index:index,animated:false,viewPosition:0.5});return true;}
+            R.useEffect(function(){return function(){clearTimeout(restoreTimer.current);};},[]);
+            R.useEffect(function(){if(restored.current||!data.cached||(!data.messages.length&&!data.loaded))return;restored.current=true;
+                if(data.position&&data.position.id&&!data.position.bottom&&data.messages.some(function(m){return m.id===data.position.id;})){
+                    nearBottom.current=false;restorePending.current=data.position.id;var positionId=data.position.id;
+                    restoreTimer.current=setTimeout(function(){if(!mounted.current)return;restoreIssued.current=true;
+                        if(!scrollTo(positionId)){restorePending.current='';restoreReady[1](true);}},40);
+                    return;
+                }restoreReady[1](true);
+            },[data.cached,data.loaded,data.messages.length]);
+            var viewability=R.useRef(function(result){var items=result.viewableItems||[];
+                var ids=items.filter(function(row){return row.isViewable;}).map(function(row){return row.item.id;}),signature=ids.join('|');
+                if(signature!==viewableIds.current){viewableIds.current=signature;var map={};ids.forEach(function(id){map[id]=true;});visibleMedia[1](map);}
+                if(restoreIssued.current&&restorePending.current&&items.some(function(row){return row.item.id===restorePending.current;})){
+                    restorePending.current='';restoreReady[1](true);
+                }}).current;
             function edit(value){draft[1](value);env.editDraft(target,value);if(value.trim())env.typing(target);}
-            function latest(){nearBottom.current=true;bottom[1](true);if(list.current)list.current.scrollToOffset({offset:0,animated:true});env.acknowledge(target);}
+            function latest(){scroll.latest();}
             function send(){if(busy[0]||!draft[0].trim())return;var text=draft[0];edit('');picker[1](false);env.send(target,text);latest();}
             function pick(operation){if(input.current)input.current.blur();N.Keyboard.dismiss();closePopup();busy[1](true);error[1]('');env.request(operation||'pickFile').then(function(file){if(mounted.current&&!file.cancelled){attachment[1](file);spoiler[1](false);uncertain.current=false;}})
                 .catch(function(e){if(mounted.current)error[1](e.message);}).then(function(){if(mounted.current)busy[1](false);});}
@@ -86,7 +105,7 @@ internal object SteamChatUiScript {
                 function pollProgress(){if(finished||!mounted.current)return;env.request('uploadProgress',{selection:selection}).then(function(value){if(mounted.current)progress[1](value.percent);}).catch(function(){})
                     .then(function(){if(!finished&&mounted.current)progressTimer.current=setTimeout(pollProgress,400);});}pollProgress();
                 env.request('upload',Object.assign({},target,{selection:selection,spoiler:spoiler[0]})).then(function(){if(mounted.current){attachment[1](null);env.history(target,false);latest();}})
-                    .catch(function(e){uncertain.current=true;if(mounted.current)error[1](e.message);}).then(function(){finished=true;clearTimeout(progressTimer.current);if(mounted.current)busy[1](false);});
+                    .catch(function(e){uncertain.current=e.message==='ATTACHMENT_UNCONFIRMED'||e.message==='ACCOUNT_CHANGED'||e.message==='TIMEOUT'||e.message==='REQUEST_FAILED';if(mounted.current)error[1](e.message);}).then(function(){finished=true;clearTimeout(progressTimer.current);if(mounted.current)busy[1](false);});
             }
             function retry(item){env.history(target,false).then(function(){if(!data.messages.some(function(m){return m.id===item.id;}))return;
                 N.Alert.alert(t('chat_message_retry_title'),t('chat_message_retry_body'),[
@@ -99,32 +118,36 @@ internal object SteamChatUiScript {
             var title=target.peer?peer.name:((room||{}).title||target.title||t('chat_group_conversation'));
             var status=state.typing[target.key]?t('chat_typing'):target.peer?(peer.game||''):(peer.name||'');
             return h(N.View,{style:{flex:1,backgroundColor:'#22252b'}},
-                h(layout.Header,{target:target,navigation:props.navigation,title:title,profile:peer,status:status,voice:function(){closePopup();chatVoiceUi(env).start(target);},info:function(){closePopup();info[1](true);},
+                h(layout.Header,{target:target,navigation:props.navigation,title:title,profile:peer,status:status,typing:!!state.typing[target.key],voice:function(){closePopup();chatVoiceUi(env).start(target);},info:function(){closePopup();info[1](true);},
                     invite:function(){closePopup();N.Keyboard.dismiss();if(target.group)admin[1]('invite');else createGroup[1](true);}}),
                 h(layout.KeyboardViewport,null,
                 h(skin.Background),
                 h(chatVoiceUi(env).Bar,{target:target,avatar:skin.Avatar}),
                 state.error?h(Banner,{error:state.error,retry:env.refresh}):null,
                 error[0]?h(Banner,{error:error[0]}):null,data.error?h(Banner,{error:data.error,retry:function(){env.history(target,false);}}):null,
-                h(N.View,{style:{flex:1,overflow:'hidden'}},
-                h(N.FlatList,{ref:list,style:{flex:1},data:data.messages,inverted:true,contentContainerStyle:{flexGrow:1,justifyContent:'flex-end',paddingHorizontal:10,paddingVertical:12},keyExtractor:function(m){return m.id;},keyboardShouldPersistTaps:'handled',
-                    keyboardDismissMode:'on-drag',maintainVisibleContentPosition:{minIndexForVisible:0},initialNumToRender:24,windowSize:9,
-                    onViewableItemsChanged:viewability,viewabilityConfig:{itemVisiblePercentThreshold:30,minimumViewTime:300},
-                    onScroll:function(e){var near=e.nativeEvent.contentOffset.y<60;if(near!==nearBottom.current){nearBottom.current=near;bottom[1](near);}if(near&&focused)env.acknowledge(target);},scrollEventThrottle:120,
-                    onScrollToIndexFailed:function(e){var pending=jump.current;if(!pending||pending.attempts++>3)return;if(list.current)list.current.scrollToOffset({offset:e.averageItemLength*e.index,animated:false});setTimeout(function(){if(mounted.current&&list.current)list.current.scrollToIndex({index:pending.index,animated:false,viewPosition:0.5});},120);},
+                h(N.View,{testID:scroll.viewportTag,collapsable:false,style:{flex:1,overflow:'hidden'}},
+                h(N.FlatList,{ref:list,testID:scroll.listTag,style:{flex:1},data:scroll.messages,inverted:true,contentContainerStyle:{flexGrow:1,justifyContent:'flex-end',paddingHorizontal:10,paddingVertical:12},keyExtractor:function(m){return m.id;},keyboardShouldPersistTaps:'handled',
+                    keyboardDismissMode:'on-drag',maintainVisibleContentPosition:{minIndexForVisible:0,autoscrollToTopThreshold:5},initialNumToRender:24,windowSize:9,
+                    onViewableItemsChanged:viewability,viewabilityConfig:{itemVisiblePercentThreshold:0},
+                    onScroll:function(e){nearBottom.current=e.nativeEvent.contentOffset.y<=5;},scrollEventThrottle:16,
+                    onScrollToIndexFailed:function(e){var pending=jump.current;if(!pending)return;if(pending.attempts++>3){restorePending.current='';restoreReady[1](true);return;}
+                        if(list.current)list.current.scrollToOffset({offset:e.averageItemLength*e.index,animated:false});clearTimeout(restoreTimer.current);
+                        restoreTimer.current=setTimeout(function(){if(!mounted.current||!list.current)return;
+                            pending.index=data.messages.findIndex(function(m){return m.id===pending.id;});
+                            if(pending.index<0){restorePending.current='';restoreReady[1](true);return;}
+                            list.current.scrollToIndex({index:pending.index,animated:false,viewPosition:0.5});},120);},
                     onEndReachedThreshold:0.4,onEndReached:function(){if(data.loaded&&data.more&&!data.busy)env.history(target,true);},
                     ListEmptyComponent:!data.loaded&&!data.cached&&!data.error?h(N.View,{style:{padding:32,transform:[{scaleY:-1}]}},h(N.ActivityIndicator,{color:'#66c0f4'})):null,
                     ListHeaderComponent:data.messages.length&&skin.dayKey(data.messages[0].timestamp)!==skin.dayKey(Date.now()/1000)?h(skin.DateDivider,{timestamp:Date.now()/1000}):null,
                     ListFooterComponent:data.more?h(Button,{title:data.loadingOlder?t('chat_loading'):t('chat_load_earlier_messages'),disabled:data.loadingOlder,onPress:function(){env.history(target,true);}}):null,
                     renderItem:function(row){var item=row.item,self=item.sender===state.account;
                         var profile=env.profile(self?Object.assign({},state.self||{},state.profiles[item.sender]||{},item.profile||{}):item.profile,item.sender),effect=effects.parse(item.text);
-                        return h(skin.Message,{item:item,older:data.messages[row.index+1],newer:data.messages[row.index-1],profile:profile,menu:function(){menu[1](item);}},
-                            item.deleted?skin.text(t('chat_message_deleted'),{fontStyle:'italic'}):effect?h(effects.Card,{name:effect,sender:profile.name,targetKey:target.key,disabled:!!item.pending||!!item.failed}):h(RichText,{text:item.text,open:viewer[1],detail:true}),
+                        return h(N.View,{testID:scroll.rowTag(item.id),collapsable:false},h(skin.Message,{item:item,older:scroll.messages[row.index+1],newer:scroll.messages[row.index-1],profile:profile,menu:function(){if(!item.locallyHidden)menu[1](item);}},
+                            item.deleted||item.locallyHidden?skin.text(t('chat_message_deleted'),{fontStyle:'italic'}):effect?h(effects.Card,{name:effect,sender:profile.name,targetKey:target.key,disabled:!!item.pending||!!item.failed}):h(RichText,{text:item.text,open:function(value){viewer[1](typeof value==='string'?{url:value,kind:'image',item:item,target:target,profile:profile}:value);},detail:true,item:item,target:target,profile:profile,active:focused&&!!visibleMedia[0][item.id]&&!viewer[0]&&!menu[0]}),
                             !item.deleted&&(item.reactions||[]).some(function(r){return r.count>0;})?h(actions.Reactions,{target:target,item:item}):null,
                             item.pending?skin.text(t('chat_sending'),{fontSize:11,lineHeight:16,color:'#72808d'}):null,
-                            item.failed?h(Button,{title:t('chat_delivery_unconfirmed_retry'),onPress:function(){retry(item);}}):null);}}),
-                h(effects.Layer,{key:state.account+':'+target.key,target:target,focused:focused})),
-                !bottom[0]?h(Button,{title:t('chat_jump_to_latest'),onPress:latest}):null,
+                            item.failed?h(Button,{title:t('chat_delivery_unconfirmed_retry'),onPress:function(){retry(item);}}):null));}}),
+                h(effects.Layer,{key:state.account+':'+target.key,target:target,focused:focused}),scroll.slot),
                 state.typing[target.key]?label(t('chat_typing'),{fontSize:12,color:c.blue,paddingHorizontal:14,paddingVertical:4}):null,
                 attachment[0]?h(N.View,{style:{backgroundColor:c.panel,padding:10}},
                     h(N.View,{style:{flexDirection:'row',alignItems:'center'}},attachment[0].image?h(N.Image,{source:{uri:attachment[0].uri},style:{width:64,height:64},resizeMode:'contain'}):null,
@@ -144,7 +167,7 @@ internal object SteamChatUiScript {
                 createGroup[0]?h(groupsUi.Create,{initialName:peer.name,invitees:target.peer?[target.peer]:[],close:function(){createGroup[1](false);},created:function(id){
                     createGroup[1](false);var g=state.groups.find(function(value){return value.id===id;});
                     if(g&&g.rooms&&g.rooms[0])props.navigation.setParams({target:g.rooms[0],account:state.account});}}):null,
-                viewer[0]?h(media.Viewer,{uri:viewer[0],close:function(){viewer[1](null);}}):null,
+                viewer[0]?h(media.Viewer,{media:viewer[0],close:function(){viewer[1](null);}}):null,
                 menu[0]?h(actions.MessageMenu,{target:target,item:menu[0],account:state.account,close:function(){menu[1](null);}}):null,
                 info[0]?h(actions.Info,{target:target,close:function(){info[1](false);},jump:scrollTo,manage:function(){info[1](false);admin[1](true);}}):null,
                 admin[0]?h(groupsUi.Admin,{group:target.group,room:target.room,initialTab:admin[0]==='invite'?'invite':'info',close:function(){admin[1](false);}}):null));
@@ -203,7 +226,7 @@ internal object SteamChatUiScript {
                         style:{minHeight:48,margin:12,paddingHorizontal:12,color:c.text,fontSize:16,backgroundColor:c.panel,borderRadius:3}}),
                     error[0]?h(Banner,{error:error[0],retry:friends}):null,
                     section[0]==='groups'&&state.groupsError?h(Banner,{error:'REQUEST_FAILED',retry:env.refresh}):null,
-                    h(N.FlatList,{data:rows,keyExtractor:function(row){return row.key||row.id;},keyboardShouldPersistTaps:'handled',refreshing:state.refreshing,
+                    h(N.FlatList,{data:rows,extraData:state.revision,keyExtractor:function(row){return row.key||row.id;},keyboardShouldPersistTaps:'handled',refreshing:state.refreshing,
                         onRefresh:section[0]==='friends'?function(){state.friends=null;friends();}:function(){env.refresh(true);},
                         ListEmptyComponent:h(Empty,{loading:state.loading||(section[0]==='groups'&&state.groupsLoading)||(section[0]==='friends'&&!state.friends&&!error[0]),title:t('chat_no_conversations_yet')}),
                         renderItem:function(row){var item=row.item,profile=env.profile(item.profile||item,item.peer||item.id),title=item.title||profile.name||item.peer,unread=item.unread||0;
@@ -211,7 +234,8 @@ internal object SteamChatUiScript {
                             return h(N.Pressable,{onPress:function(){if(item.rooms){group[1](item);search[1]('');}else open(item.key?item:{key:'p:'+item.id,peer:item.id,kind:'private',profile:item});},
                                 accessibilityRole:'button',accessibilityLabel:title,style:function(s){return {paddingHorizontal:16,paddingVertical:14,flexDirection:'row',alignItems:'center',gap:12,backgroundColor:s.pressed?c.panel:'transparent',borderBottomWidth:1,borderColor:c.line};}},
                                 h(Avatar,{profile:profile}),h(N.View,{style:{flex:1}},label(title,{color:profile.online?'#66c0f4':c.text,fontWeight:'500'},{numberOfLines:1}),
-                                    label(item.rooms?moduleChannelCount(item.rooms.length):(item.preview||profile.game||(profile.online?t('chat_online'):t('chat_offline'))),{color:c.muted,fontSize:13,marginTop:4},{numberOfLines:1})),
+                                    item.rooms||item.preview||item.kind==='group'?label(item.rooms?moduleChannelCount(item.rooms.length):(item.preview||''),{color:c.muted,fontSize:13,marginTop:4},{numberOfLines:1}):
+                                    h(Presence,{profile:profile,fontSize:13,style:{marginTop:4}})),
                                 unread?label(String(Math.min(unread,99)),{color:'#fff',backgroundColor:'#1a6da0',paddingHorizontal:7,paddingVertical:3,borderRadius:10,fontSize:12}):null);}})));
         }
         // This source is injected directly into Hermes, without Metro/Babel class transforms.

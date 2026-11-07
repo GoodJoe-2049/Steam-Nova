@@ -6,6 +6,7 @@ import steam.nova.app.features.chat.network.SteamChatConnection
 import steam.nova.app.features.chat.network.SteamChatFailure
 import steam.nova.app.features.chat.network.SteamChatHttp
 import steam.nova.app.features.chat.protocol.SteamChatProtocol as P
+import steam.nova.app.features.chat.presence.SteamChatPresence
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
@@ -21,13 +22,26 @@ internal class SteamChatRepository(
     private val profiles = ConcurrentHashMap<String, JSONObject>()
     @Volatile private var closed = false
     @Volatile private var activeGroups: String? = null
+    private val presence = SteamChatPresence(::loadPresence, ::enqueue)
     private val cm = SteamChatConnection(account, ::receive) { connected ->
         if (connected) activeGroups = null
-        enqueue(JSONObject().put("type", if (connected) "connected" else "disconnected"))
+        val epoch = if (connected) presence.generation() else presence.reset()
+        enqueue(JSONObject().put("type", if (connected) "connected" else "disconnected").put("presenceEpoch", epoch))
+        if (connected) presence.refresh(profiles.keys.toList() + account.id)
     }
     private val nicknames = SteamChatNicknames(::checkAccount, { SteamChatHttp.nicknames(account) }, { call("Player.GetNicknameList") }) { names ->
         enqueue(JSONObject().put("type", "nicknames").put("names", names))
     }
+
+    private fun loadPresence(ids: List<String>): P.Fields {
+        checkAccount()
+        val request = P.Writer().apply { ids.forEach { number(1, it.toLong()) } }
+        // Snapshot work has its own executor; subscription and RPC waits never run in onMessage.
+        cm.requestFriendData(ids)
+        return call("Player.GetPlayerLinkDetails", request)
+    }
+
+    fun foreground(value: Boolean) = cm.foreground(value)
 
     fun checkAccount() {
         if (closed) throw SteamChatFailure("ACCOUNT_CHANGED")
@@ -56,12 +70,13 @@ internal class SteamChatRepository(
             .messages(1).map { item ->
                 val peer = steamId(item.number(1))
                 JSONObject().put("key", "p:$peer").put("peer", peer).put("kind", "private")
-                    .put("timestamp", item.number(2)).put("unread", item.number(4))
+                    .put("timestamp", item.number(2)).put("lastRead", item.number(3)).put("unread", item.number(4))
             }
         runCatching { loadProfiles(sessions.map { it.getString("peer") } + account.id) }
         checkAccount()
         sessions.forEach { row -> row.put("profile", profile(row.getString("peer"))) }
         return JSONObject().put("sessions", JSONArray(sessions)).put("self", profile(account.id)).put("nicknames", nicknames.snapshot())
+            .put("presenceState", presence.snapshot())
     }
 
     fun groups(): JSONArray {
@@ -77,6 +92,7 @@ internal class SteamChatRepository(
                 JSONObject().put("key", "g:$id:$roomId").put("kind", "group").put("group", id)
                     .put("room", roomId).put("title", room.text(2)).put("groupTitle", group.text(2))
                     .put("timestamp", room.number(5)).put("preview", room.text(7))
+                    .put("lastRead", ack[roomId] ?: 0)
                     .put("unread", if (room.number(5) > (ack[roomId] ?: 0)) 1 else 0)
             }
             JSONObject().put("id", id).put("title", group.text(2)).put("name", group.text(2))
@@ -136,13 +152,14 @@ internal class SteamChatRepository(
         val personaName = raw?.optString("personaName").orEmpty().ifBlank { id }
         val nickname = nicknames.name(id)
         return (raw?.let { JSONObject(it.toString()) } ?: JSONObject().put("id", id).put("personaName", personaName))
-            .put("nickname", nickname).put("name", nickname.ifBlank { personaName })
+            .put("nickname", nickname).put("name", nickname.ifBlank { personaName }).put("presence", presence.profile(id))
     }
 
     private fun loadProfiles(ids: List<String>) {
         nicknames.refresh()
         ids.distinct().filter { it.matches(STEAM_ID) }.chunked(100).forEach { batch ->
             checkAccount()
+            val presenceEpoch = presence.generation()
             val payload = SteamChatHttp.api(account, "/ISteamUserOAuth/GetUserSummaries/v1/", mapOf("steamids" to batch.joinToString(",")))
             val players = (payload.optJSONObject("response") ?: payload).optJSONArray("players") ?: JSONArray()
             for (i in 0 until players.length()) {
@@ -151,8 +168,10 @@ internal class SteamChatRepository(
                 if (id.matches(STEAM_ID)) profiles[id] = JSONObject().put("id", id)
                     .put("personaName", player.optString("personaname", id)).put("name", player.optString("personaname", id))
                     .put("avatar", player.optString("avatarmedium", player.optString("avatar")))
-                    .put("personaState", player.optInt("personastate")).put("online", player.optInt("personastate") != 0).put("game", player.optString("gameextrainfo"))
+                    .put("personaState", player.optInt("personastate")).put("online", player.optInt("personastate") in 1..6).put("game", player.optString("gameextrainfo"))
+                presence.seed(player, presenceEpoch)
             }
+            presence.refresh(batch)
         }
     }
 
@@ -205,14 +224,34 @@ internal class SteamChatRepository(
     fun acknowledge(args: JSONObject): JSONObject {
         val target = Target.parse(args)
         val time = args.getLong("timestamp")
-        require(time > 0)
+        require(time in 1..0xffffffffL)
         checkAccount()
         val body = if (target.peer != null) P.Writer().fixed64(1, target.peer.toLong()).number(2, time)
         else target.writer().number(3, time)
-        if (target.peer != null) SteamChatHttp.friendMessages(account, "AckMessage", body)
+        if (target.peer != null) cm.notify("FriendMessages.AckMessage#1", body.build())
         else cm.notify("ChatRoom.AckChatMessage#1", body.build())
         checkAccount()
         return JSONObject()
+    }
+
+    /** Lightweight verification after fire-and-forget read notifications; no profile/CDN requests. */
+    internal fun readPositions(keys: Set<String>): Map<String, Long> = buildMap {
+        if (keys.any { it.startsWith("p:") }) {
+            call("FriendMessages.GetActiveMessageSessions", P.Writer().number(1, 0).number(2, 1)).messages(1).forEach { row ->
+                val key = "p:${steamId(row.number(1))}"
+                if (key in keys) put(key, row.number(3))
+            }
+        }
+        if (keys.any { it.startsWith("g:") }) {
+            call("ChatRoom.GetMyChatRoomGroups").messages(1).forEach { pair ->
+                val group = pair.messages(2).firstOrNull() ?: return@forEach
+                val id = unsigned(group.number(1))
+                pair.messages(1).firstOrNull()?.messages(3).orEmpty().forEach { row ->
+                    val key = "g:$id:${unsigned(row.number(1))}"
+                    if (key in keys) put(key, row.number(3))
+                }
+            }
+        }
     }
 
     fun catalog(): JSONObject {
@@ -246,6 +285,7 @@ internal class SteamChatRepository(
         if (closed) return
         val method = packet.header.text(12).substringBefore('#')
         val fields = P.read(packet.body)
+        if (packet.type == 766) { presence.receive(fields); return }
         if (steam.nova.app.features.chat.voice.SteamChatVoiceProtocol.owns(method)) {
             onVoice(method, fields)
             return
@@ -285,7 +325,17 @@ internal class SteamChatRepository(
                         fields.number(5), fields.number(7), text).put("profile", profile(fields.number(3).toString()))
                         .put("system", (event?.number(1) ?: 0) != 0L).put("eventType", event?.number(1) ?: 0)))
             }
-            "FriendMessagesClient.NotifyAckMessageEcho", "ChatRoomClient.NotifyAckChatMessageEcho" -> enqueue(JSONObject().put("type", "resync"))
+            "FriendMessagesClient.NotifyAckMessageEcho" -> {
+                val peer = fields.number(1).toString()
+                if (peer.matches(STEAM_ID) && fields.number(2) > 0) enqueue(JSONObject().put("type", "read")
+                    .put("key", "p:$peer").put("timestamp", fields.number(2)))
+            }
+            "ChatRoomClient.NotifyAckChatMessageEcho" -> {
+                if (fields.number(1) != 0L && fields.number(2) != 0L && fields.number(3) > 0) {
+                    enqueue(JSONObject().put("type", "read").put("key", "g:${unsigned(fields.number(1))}:${unsigned(fields.number(2))}")
+                        .put("timestamp", fields.number(3)))
+                } else enqueue(JSONObject().put("type", "resync"))
+            }
             else -> if (method.startsWith("ChatRoomClient.")) enqueue(JSONObject().put("type", "resync"))
         }
     }
@@ -293,6 +343,7 @@ internal class SteamChatRepository(
     override fun close() {
         closed = true
         nicknames.close()
+        presence.close()
         cm.close()
         synchronized(events) { events.clear() }
         profiles.clear()

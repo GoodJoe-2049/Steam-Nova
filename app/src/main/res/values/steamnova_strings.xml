@@ -259,6 +259,9 @@
     <string name="chat_emotes">"Emotes"</string>
     <string name="chat_emoticons">"Emoticons"</string>
     <string name="chat_enable">"Enable"</string>
+    <string name="chat_error_attachment_rejected">"Steam rejected this attachment. Try another image or sign in again."</string>
+    <string name="chat_error_attachment_upload">"Unable to upload the attachment. Please try again."</string>
+    <string name="chat_error_attachment_unconfirmed">"Unable to confirm delivery. Check the conversation before sending again."</string>
     <string name="chat_error_attachment_size">"Attachments must be 30 MB or smaller."</string>
     <string name="chat_error_avatar_size">"Group avatars must be 5 MB or smaller."</string>
     <string name="chat_error_connection">"Connection unavailable. Please try again."</string>
@@ -286,7 +289,7 @@
     <string name="chat_invite_members">"Invite members"</string>
     <string name="chat_invite_this_friend_confirm">"Invite this friend?"</string>
     <string name="chat_invite_to_chat">"Invite to chat"</string>
-    <string name="chat_jump_to_latest">"Jump to latest ↓"</string>
+    <string name="chat_jump_to_latest">"Jump to latest"</string>
     <string name="chat_kick_member">"Kick member"</string>
     <string name="chat_kick_members">"Kick members"</string>
     <string name="chat_links">"Links"</string>
@@ -325,6 +328,12 @@
     <string name="chat_notification_self">"You"</string>
     <string name="chat_offline">"Offline"</string>
     <string name="chat_online">"Online"</string>
+    <string name="chat_platform_mobile">Mobile</string>
+    <string name="chat_platform_big_picture">Big Picture</string>
+    <string name="chat_platform_vr">VR</string>
+    <string name="chat_platform_handheld">Handheld</string>
+    <string name="chat_platform_web">Web</string>
+    <string name="chat_platform_desktop">Desktop</string>
     <string name="chat_open">"Open"</string>
     <string name="chat_open_game_invitation">"Open game invitation"</string>
     <string name="chat_other">"Other"</string>
@@ -492,4 +501,28 @@
     <string name="chat_voice_error_interrupted">Another application interrupted the audio session.</string>
     <string name="chat_voice_error_background">The call ended because Steam left the foreground.</string>
     <string name="chat_voice_error_failed">Unable to complete the call. Check the connection and try again.</string>
+    <plurals name="chat_jump_unread">
+        <item quantity="one">%d unread message, jump to latest</item>
+        <item quantity="other">%d unread messages, jump to latest</item>
+    </plurals>
+    <string name="chat_media_copy_link">"Copy link"</string>
+    <string name="chat_media_save_gallery">"Save to gallery"</string>
+    <string name="chat_media_save_downloads">"Save to Downloads"</string>
+    <string name="chat_media_share">"Share"</string>
+    <string name="chat_media_forward">"Forward"</string>
+    <string name="chat_media_download">"Download video"</string>
+    <string name="chat_media_cancel_download">"Cancel download"</string>
+    <string name="chat_media_play">"Play"</string>
+    <string name="chat_media_pause">"Pause"</string>
+    <string name="chat_media_mute">"Mute"</string>
+    <string name="chat_media_unmute">"Unmute"</string>
+    <string name="chat_media_view_video">"View video full screen"</string>
+    <string name="chat_media_seek">"Video position"</string>
+    <string name="chat_media_unknown_size">"Unknown size"</string>
+    <string name="chat_media_downloading">"The video is downloading. Try again when it finishes."</string>
+    <string name="chat_media_failed">"Unable to load this media. Tap play to retry."</string>
+    <string name="chat_media_seek_hint">Swipe sideways to change speed</string>
+    <string name="chat_media_delete_local">"Remove this message from this device? It will remain on other devices and for the recipient."</string>
+    <string name="chat_media_search">"Search conversations"</string>
+    <string name="chat_media_send">"Send"</string>
 </resources>

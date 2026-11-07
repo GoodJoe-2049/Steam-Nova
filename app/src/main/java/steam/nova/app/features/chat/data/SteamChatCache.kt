@@ -29,6 +29,8 @@ internal class SteamChatCache(context: Context, private val account: String) {
         read("summary").put("preferences", read("preferences"))
     }
     fun saveSummary(value: JSONObject) = synchronized(lock) { write("summary", value) }
+    fun readReceipts(): JSONObject = synchronized(lock) { read("read-receipts") }
+    fun saveReadReceipts(value: JSONObject) = synchronized(lock) { write("read-receipts", value) }
     fun catalog(): JSONObject = synchronized(lock) { read("catalog") }
     fun saveCatalog(value: JSONObject) = synchronized(lock) { write("catalog", value) }
     fun preferences(): JSONObject = synchronized(lock) { read("preferences") }
@@ -40,7 +42,18 @@ internal class SteamChatCache(context: Context, private val account: String) {
     fun thread(key: String): JSONObject = synchronized(lock) {
         val value = read("thread:$key")
         if (!value.has("messages")) value.put("messages", JSONArray())
+        value.put("hidden", read("hidden-media").optJSONObject(key) ?: JSONObject())
         value
+    }
+    fun deleteLocal(key: String, id: String): JSONObject = synchronized(lock) {
+        require(id.length in 1..180)
+        val all = read("hidden-media")
+        val hidden = all.optJSONObject(key) ?: JSONObject()
+        hidden.put(id, true)
+        all.put(key, hidden)
+        write("hidden-media", all)
+        merge(key, JSONArray())
+        JSONObject()
     }
     fun state(key: String, value: JSONObject): JSONObject = synchronized(lock) {
         val data = thread(key)
@@ -51,9 +64,11 @@ internal class SteamChatCache(context: Context, private val account: String) {
     fun merge(key: String, incoming: JSONArray, more: Boolean? = null, remove: String? = null): JSONObject = synchronized(lock) {
         val data = thread(key)
         val messages = linkedMapOf<String, JSONObject>()
+        val hidden = read("hidden-media").optJSONObject(key) ?: JSONObject()
         fun add(items: JSONArray) {
             for (index in 0 until items.length()) {
                 val row = items.getJSONObject(index)
+                if (hidden.optBoolean(row.optString("id"))) row.put("locallyHidden", true).put("text", "").put("reactions", JSONArray())
                 if (row.optString("id") != remove) messages[row.getString("id")] = row
             }
         }
@@ -87,7 +102,7 @@ internal class SteamChatCache(context: Context, private val account: String) {
         data
     }
     private fun trim() {
-        val protected = setOf(file("summary").name, file("preferences").name, file("catalog").name)
+        val protected = setOf(file("summary").name, file("preferences").name, file("catalog").name, file("read-receipts").name, file("hidden-media").name)
         directory.listFiles()?.filter { it.extension == "json" && it.name !in protected }
             ?.sortedByDescending { it.lastModified() }?.drop(60)?.forEach { AtomicFile(it).delete() }
     }
