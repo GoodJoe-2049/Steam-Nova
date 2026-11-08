@@ -7,7 +7,7 @@ internal object SteamChatUiScript {
         var env=chatEnvironment(require);
         if(env.ui)return env.ui;
         var R=env.React,N=env.RN,h=R.createElement;
-        var t=moduleText,Presence=chatPresenceUi(env).Status;
+        var t=moduleText,Presence=chatPresenceUi(env).Status,GameDetails=chatPresenceUi(env).GameDetails;
         function colors(){
             var theme=require(1590).useTheme(),c=theme.color||{};
             return {bg:(c.background||{}).primary||'#1b1e24',panel:(c.background||{}).secondary||'#23262e',
@@ -175,11 +175,14 @@ internal object SteamChatUiScript {
         function ChatHome(props){
             var state=env.useStore(),c=colors(),section=R.useState('sessions'),group=R.useState(null),search=R.useState(''),error=R.useState('');
             var focused=require(1366).useIsFocused(),create=R.useState(false),manage=R.useState(false);
+            var fontScale=N.useWindowDimensions().fontScale||1;
+            // Three lines fit beside the 44dp avatar; every row reserves the same scaled text height.
+            var rowTextHeight=Math.max(44,Math.ceil(18*fontScale)+2*Math.ceil(13*fontScale));
             function open(target){N.Keyboard.dismiss();props.navigation.navigate('MillenniumChatThread',{target:target,account:state.account});}
             R.useEffect(function(){if(focused&&state.openTarget){var next=state.openTarget;state.openTarget=null;open(next);env.emit();}},[focused,state.openTarget]);
             function back(){if(group[0]){group[1](null);return true;}return false;}
             R.useEffect(function(){var sub=N.BackHandler.addEventListener('hardwareBackPress',function(){return focused&&back();});return function(){sub.remove();};},[focused,group[0]]);
-            function friends(){error[1]('');env.load('friends').catch(function(e){error[1](e.message);});}
+            function friends(force){error[1]('');env.load('friends',force===true).catch(function(e){error[1](e.message);});}
             function notifications(){
                 function save(value){state.background=value;env.emit();}
                 function settings(){N.Alert.alert(t('chat_notification_permission_title'),t('chat_notification_permission_body'),[
@@ -227,15 +230,20 @@ internal object SteamChatUiScript {
                     error[0]?h(Banner,{error:error[0],retry:friends}):null,
                     section[0]==='groups'&&state.groupsError?h(Banner,{error:'REQUEST_FAILED',retry:env.refresh}):null,
                     h(N.FlatList,{data:rows,extraData:state.revision,keyExtractor:function(row){return row.key||row.id;},keyboardShouldPersistTaps:'handled',refreshing:state.refreshing,
-                        onRefresh:section[0]==='friends'?function(){state.friends=null;friends();}:function(){env.refresh(true);},
+                        onRefresh:section[0]==='friends'?function(){friends(true);}:function(){env.refresh(true);},
                         ListEmptyComponent:h(Empty,{loading:state.loading||(section[0]==='groups'&&state.groupsLoading)||(section[0]==='friends'&&!state.friends&&!error[0]),title:t('chat_no_conversations_yet')}),
                         renderItem:function(row){var item=row.item,profile=env.profile(item.profile||item,item.peer||item.id),title=item.title||profile.name||item.peer,unread=item.unread||0;
                             if(item.rooms)unread=item.rooms.reduce(function(n,r){return n+(r.unread||0);},0);
+                            var personal=!item.rooms&&item.kind!=='group',playing=personal&&profile.online&&(profile.playing||profile.game);
+                            var details=!!(playing&&(profile.richPresence||'').trim());
                             return h(N.Pressable,{onPress:function(){if(item.rooms){group[1](item);search[1]('');}else open(item.key?item:{key:'p:'+item.id,peer:item.id,kind:'private',profile:item});},
                                 accessibilityRole:'button',accessibilityLabel:title,style:function(s){return {paddingHorizontal:16,paddingVertical:14,flexDirection:'row',alignItems:'center',gap:12,backgroundColor:s.pressed?c.panel:'transparent',borderBottomWidth:1,borderColor:c.line};}},
-                                h(Avatar,{profile:profile}),h(N.View,{style:{flex:1}},label(title,{color:profile.online?'#66c0f4':c.text,fontWeight:'500'},{numberOfLines:1}),
-                                    item.rooms||item.preview||item.kind==='group'?label(item.rooms?moduleChannelCount(item.rooms.length):(item.preview||''),{color:c.muted,fontSize:13,marginTop:4},{numberOfLines:1}):
-                                    h(Presence,{profile:profile,fontSize:13,style:{marginTop:4}})),
+                                h(Avatar,{profile:profile}),h(N.View,{style:{flex:1,minWidth:0,height:rowTextHeight,justifyContent:'center'}},
+                                    label(title,{color:profile.playing?'#90ba3c':profile.online?'#66c0f4':c.text,fontWeight:'500',lineHeight:18,includeFontPadding:false},{numberOfLines:1,ellipsizeMode:'tail'}),
+                                    !playing&&(item.rooms||item.preview||item.kind==='group')?label(item.rooms?moduleChannelCount(item.rooms.length):(item.preview||''),
+                                        {color:c.muted,fontSize:13,lineHeight:17,includeFontPadding:false,marginTop:4},{numberOfLines:1,ellipsizeMode:'tail'}):
+                                    h(Presence,{profile:profile,fontSize:13,lineHeight:details?13:17,style:{marginTop:details?0:4}}),
+                                    details?h(GameDetails,{profile:profile}):null),
                                 unread?label(String(Math.min(unread,99)),{color:'#fff',backgroundColor:'#1a6da0',paddingHorizontal:7,paddingVertical:3,borderRadius:10,fontSize:12}):null);}})));
         }
         // This source is injected directly into Hermes, without Metro/Babel class transforms.

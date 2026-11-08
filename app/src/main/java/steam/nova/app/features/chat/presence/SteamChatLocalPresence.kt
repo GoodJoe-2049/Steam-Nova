@@ -17,7 +17,8 @@ internal class SteamChatLocalPresence {
     fun receive(account: String, fields: P.Fields) {
         if (fields.number(1) and 1L == 0L) return
         val self = fields.messages(2).firstOrNull { it.number(1).toString() == account } ?: return
-        state = self.number(2).toInt().coerceIn(0, 7)
+        if (!self.has(2) || self.number(2) !in 0L..7L) return
+        state = self.number(2).toInt()
         if (self.has(10)) userSelected = self.number(10) != 0L
     }
 

@@ -120,13 +120,6 @@ internal class SteamChatConnection(
         }
     }
 
-    fun requestFriendData(ids: List<String>) {
-        ensureConnected()
-        val body = Proto.Writer().number(1, 339)
-        ids.forEach { body.fixed64(2, it.toLong()) }
-        send(815, body.build())
-    }
-
     fun catalog(): Proto.Fields {
         ensureConnected()
         val future = CompletableFuture<Proto.Packet>()

@@ -89,7 +89,7 @@ internal object SteamChatStoreScript {
             if(!state.account||!running)return Promise.resolve();refreshGroups();
             if(manual===true){state.refreshing=true;emit();}if(refreshPromise)return refreshPromise;
             var epoch=generation;state.loading=!state.hydrated;emit();
-            refreshPromise=request('snapshot').then(function(data){
+            refreshPromise=request('snapshot',{refreshPresence:manual===true}).then(function(data){
                 if(epoch!==generation)return;hydrateProfiles(data);reads.hydrate(data.readState);state.sessions=reads.mergeRows(data.sessions,state.sessions);state.hydrated=true;if(data.self&&(data.self.avatar||!state.self))state.self=data.self;state.error='';
             }).catch(function(e){if(epoch===generation)state.error=e.message;})
                 .then(function(){if(epoch===generation){state.loading=false;state.refreshing=false;refreshPromise=null;emit();}});return refreshPromise;
@@ -210,7 +210,7 @@ internal object SteamChatStoreScript {
         function load(kind,force){
             var id=state.account;if(state[kind]&&!force)return Promise.resolve(state[kind]);
             if(kind==='catalog'&&!state.catalog)request('catalogCache').then(function(value){if(id===state.account&&value.emoticons&&!state.catalog){state.catalog=value;emit();}}).catch(function(){});
-            return request(kind).then(function(value){if(id===state.account){if(kind==='friends')value.forEach(remember);state[kind]=value;emit();}return value;});
+            return request(kind,{refreshPresence:kind==='friends'&&force===true}).then(function(value){if(id===state.account){if(kind==='friends')value.forEach(remember);state[kind]=value;emit();}return value;});
         }
         function typing(target){if(!target.peer||Date.now()-(typingSent[target.key]||0)<4000)return;typingSent[target.key]=Date.now();request('typing',target).catch(function(){});}
         function deleteMedia(target,item){return request(target.peer?'deleteLocalMedia':'deleteMessage',Object.assign({},target,item)).then(function(){

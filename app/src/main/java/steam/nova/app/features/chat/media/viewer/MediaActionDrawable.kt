@@ -48,6 +48,8 @@ open class MediaActionDrawable : Drawable() {
         private set
 
     private var transitionProgress: Float = 1.0f
+    val iconTransitionProgress: Float
+        get() = transitionProgress
     private var savedTransitionProgress: Float = 0f
     private var lastAnimationTime: Long = 0
     private var animatingTransition: Boolean = false
@@ -122,7 +124,7 @@ open class MediaActionDrawable : Drawable() {
             }
             if (
                 previousIcon == ICON_PLAY && icon == ICON_PAUSE ||
-                    previousIcon == ICON_PAUSE && icon == ICON_PLAY
+                previousIcon == ICON_PAUSE && icon == ICON_PLAY
             ) {
                 transitionAnimationTime = 300.0f
             } else if (
@@ -133,7 +135,7 @@ open class MediaActionDrawable : Drawable() {
                 transitionAnimationTime = 360.0f
             } else if (
                 previousIcon == ICON_NONE && icon == ICON_CANCEL_FILL ||
-                    previousIcon == ICON_CANCEL_FILL && icon == ICON_NONE
+                previousIcon == ICON_CANCEL_FILL && icon == ICON_NONE
             ) {
                 transitionAnimationTime = 160.0f
             } else {
@@ -231,7 +233,7 @@ open class MediaActionDrawable : Drawable() {
             }
         } else if (
             (this@MediaActionDrawable.currentIcon == ICON_CHECK ||
-                this@MediaActionDrawable.currentIcon == ICON_EMPTY) && previousIcon == ICON_NONE
+                    this@MediaActionDrawable.currentIcon == ICON_EMPTY) && previousIcon == ICON_NONE
         ) {
             saveCount = canvas.save()
             canvas.scale(transitionProgress, transitionProgress, cx.toFloat(), cy.toFloat())
@@ -249,7 +251,7 @@ open class MediaActionDrawable : Drawable() {
             var transition: Float
             if (
                 (previousIcon == ICON_CANCEL || previousIcon == ICON_CANCEL_FILL) &&
-                    this@MediaActionDrawable.currentIcon == ICON_DOWNLOAD
+                this@MediaActionDrawable.currentIcon == ICON_DOWNLOAD
             ) {
                 paint.alpha = (255 * min(1.0f, transitionProgress / 0.5f)).toInt()
                 transition = transitionProgress
@@ -257,8 +259,8 @@ open class MediaActionDrawable : Drawable() {
             } else {
                 if (
                     this@MediaActionDrawable.currentIcon != ICON_CANCEL &&
-                        this@MediaActionDrawable.currentIcon != ICON_CANCEL_FILL &&
-                        this@MediaActionDrawable.currentIcon != ICON_DOWNLOAD
+                    this@MediaActionDrawable.currentIcon != ICON_CANCEL_FILL &&
+                    this@MediaActionDrawable.currentIcon != ICON_DOWNLOAD
                 ) {
                     paint.alpha =
                         (255f *
@@ -282,7 +284,7 @@ open class MediaActionDrawable : Drawable() {
                 var progress = transition
                 if (
                     this@MediaActionDrawable.currentIcon == ICON_DOWNLOAD ||
-                        progress <= DOWNLOAD_TO_CANCEL_STAGE1
+                    progress <= DOWNLOAD_TO_CANCEL_STAGE1
                 ) {
                     var currentProgress: Float
                     var currentBackProgress: Float
@@ -303,7 +305,7 @@ open class MediaActionDrawable : Drawable() {
                     var currentProgress2: Float
                     var d =
                         AndroidUtilities.dp(13f).toFloat() * scale * scale +
-                            (if (isMini) AndroidUtilities.dp(2f) else 0)
+                                (if (isMini) AndroidUtilities.dp(2f) else 0)
 
                     progress -= DOWNLOAD_TO_CANCEL_STAGE1
                     val currentProgress3 =
@@ -337,8 +339,8 @@ open class MediaActionDrawable : Drawable() {
                         var alpha = (255 * currentProgress2).toInt()
                         if (
                             this@MediaActionDrawable.currentIcon != ICON_CANCEL &&
-                                this@MediaActionDrawable.currentIcon != ICON_CANCEL_FILL &&
-                                this@MediaActionDrawable.currentIcon != ICON_DOWNLOAD
+                            this@MediaActionDrawable.currentIcon != ICON_CANCEL_FILL &&
+                            this@MediaActionDrawable.currentIcon != ICON_DOWNLOAD
                         ) {
                             val backProgress = (1.0f - min(1.0f, transitionProgress / 0.5f))
                             // d *= backProgress;
@@ -404,10 +406,10 @@ open class MediaActionDrawable : Drawable() {
 
         if (
             previousIcon == ICON_CANCEL ||
-                previousIcon == ICON_CANCEL_FILL ||
-                previousIcon == ICON_NONE &&
-                    (this@MediaActionDrawable.currentIcon == ICON_CANCEL_FILL ||
-                        this@MediaActionDrawable.currentIcon == ICON_CANCEL)
+            previousIcon == ICON_CANCEL_FILL ||
+            previousIcon == ICON_NONE &&
+            (this@MediaActionDrawable.currentIcon == ICON_CANCEL_FILL ||
+                    this@MediaActionDrawable.currentIcon == ICON_CANCEL)
         ) {
             applyShaderMatrix(false)
             var d: Float
@@ -433,13 +435,13 @@ open class MediaActionDrawable : Drawable() {
                 rotation = 0f
             } else if (
                 this@MediaActionDrawable.currentIcon == ICON_UPDATE ||
-                    this@MediaActionDrawable.currentIcon == ICON_PLAY ||
-                    this@MediaActionDrawable.currentIcon == ICON_PAUSE ||
-                    this@MediaActionDrawable.currentIcon == ICON_FILE ||
-                    this@MediaActionDrawable.currentIcon == ICON_GIF ||
-                    this@MediaActionDrawable.currentIcon == ICON_SECRETCHECK ||
-                    this@MediaActionDrawable.currentIcon == ICON_FIRE ||
-                    this@MediaActionDrawable.currentIcon == ICON_CHECK
+                this@MediaActionDrawable.currentIcon == ICON_PLAY ||
+                this@MediaActionDrawable.currentIcon == ICON_PAUSE ||
+                this@MediaActionDrawable.currentIcon == ICON_FILE ||
+                this@MediaActionDrawable.currentIcon == ICON_GIF ||
+                this@MediaActionDrawable.currentIcon == ICON_SECRETCHECK ||
+                this@MediaActionDrawable.currentIcon == ICON_FIRE ||
+                this@MediaActionDrawable.currentIcon == ICON_CHECK
             ) {
                 val progress =
                     if (this@MediaActionDrawable.currentIcon == ICON_CHECK) {
@@ -472,7 +474,7 @@ open class MediaActionDrawable : Drawable() {
                 }
             } else if (
                 this@MediaActionDrawable.currentIcon == ICON_CANCEL_FILL ||
-                    this@MediaActionDrawable.currentIcon == ICON_CANCEL
+                this@MediaActionDrawable.currentIcon == ICON_CANCEL
             ) {
                 val progress = transitionProgress
                 val backProgress = 1.0f - progress
@@ -511,7 +513,7 @@ open class MediaActionDrawable : Drawable() {
                 paint.alpha = (alpha * overrideAlpha).toInt()
                 if (
                     previousIcon == ICON_CANCEL_FILL ||
-                        this@MediaActionDrawable.currentIcon == ICON_CANCEL_FILL
+                    this@MediaActionDrawable.currentIcon == ICON_CANCEL_FILL
                 ) {
                     paint3.alpha = (alpha * overrideAlpha).toInt()
                     rect.set(
@@ -540,10 +542,10 @@ open class MediaActionDrawable : Drawable() {
 
             if (
                 (previousIcon == ICON_CANCEL ||
-                    previousIcon == ICON_CANCEL_FILL ||
-                    previousIcon == ICON_NONE &&
+                        previousIcon == ICON_CANCEL_FILL ||
+                        previousIcon == ICON_NONE &&
                         (this@MediaActionDrawable.currentIcon == ICON_CANCEL_FILL ||
-                            this@MediaActionDrawable.currentIcon == ICON_CANCEL)) && alpha != 0
+                                this@MediaActionDrawable.currentIcon == ICON_CANCEL)) && alpha != 0
             ) {
                 val rad = max(4f, 360 * animatedDownloadProgress)
                 val diff = AndroidUtilities.dp((if (isMini) 2 else 4).toFloat())
@@ -556,8 +558,8 @@ open class MediaActionDrawable : Drawable() {
 
                 if (
                     previousIcon == ICON_CANCEL_FILL ||
-                        previousIcon == ICON_NONE &&
-                            this@MediaActionDrawable.currentIcon == ICON_CANCEL_FILL
+                    previousIcon == ICON_NONE &&
+                    this@MediaActionDrawable.currentIcon == ICON_CANCEL_FILL
                 ) {
                     paint.alpha = (alpha.toFloat() * 0.15f * overrideAlpha).toInt()
                     canvas.drawArc(rect, 0f, 360f, false, paint)
@@ -567,13 +569,13 @@ open class MediaActionDrawable : Drawable() {
             }
         } else if (
             previousIcon == ICON_EMPTY ||
-                this@MediaActionDrawable.currentIcon == ICON_EMPTY ||
-                previousIcon == ICON_CANCEL_PERCENT
+            this@MediaActionDrawable.currentIcon == ICON_EMPTY ||
+            previousIcon == ICON_CANCEL_PERCENT
         ) {
             var alpha: Int
             if (
                 this@MediaActionDrawable.currentIcon == ICON_NONE ||
-                    this@MediaActionDrawable.currentIcon == ICON_CHECK
+                this@MediaActionDrawable.currentIcon == ICON_CHECK
             ) {
                 val progress = transitionProgress
                 val backProgress = 1.0f - progress
@@ -644,7 +646,7 @@ open class MediaActionDrawable : Drawable() {
 
         if (
             previousIcon == ICON_SECRETCHECK ||
-                this@MediaActionDrawable.currentIcon == ICON_SECRETCHECK
+            this@MediaActionDrawable.currentIcon == ICON_SECRETCHECK
         ) {
             applyShaderMatrix(false)
             paint.alpha =
@@ -676,7 +678,7 @@ open class MediaActionDrawable : Drawable() {
         }
         if (
             previousIcon == ICON_CANCEL_NOPROFRESS ||
-                this@MediaActionDrawable.currentIcon == ICON_CANCEL_NOPROFRESS
+            this@MediaActionDrawable.currentIcon == ICON_CANCEL_NOPROFRESS
         ) {
             applyShaderMatrix(false)
             val transition =
@@ -706,7 +708,7 @@ open class MediaActionDrawable : Drawable() {
         }
         if (
             previousIcon == ICON_CANCEL_PERCENT ||
-                this@MediaActionDrawable.currentIcon == ICON_CANCEL_PERCENT
+            this@MediaActionDrawable.currentIcon == ICON_CANCEL_PERCENT
         ) {
             applyShaderMatrix(false)
             val transition =
@@ -738,14 +740,14 @@ open class MediaActionDrawable : Drawable() {
         }
         if (
             previousIcon == ICON_PLAY ||
-                previousIcon == ICON_PAUSE ||
-                this@MediaActionDrawable.currentIcon == ICON_PLAY ||
-                this@MediaActionDrawable.currentIcon == ICON_PAUSE
+            previousIcon == ICON_PAUSE ||
+            this@MediaActionDrawable.currentIcon == ICON_PLAY ||
+            this@MediaActionDrawable.currentIcon == ICON_PAUSE
         ) {
             val p =
                 if (
                     previousIcon == ICON_PLAY && currentIcon == ICON_PAUSE ||
-                        previousIcon == ICON_PAUSE && currentIcon == ICON_PLAY
+                    previousIcon == ICON_PAUSE && currentIcon == ICON_PLAY
                 ) {
                     if (animatingTransition) {
                         if (currentIcon == ICON_PLAY) 1.0f - transitionProgress
@@ -755,8 +757,8 @@ open class MediaActionDrawable : Drawable() {
 
             if (
                 this@MediaActionDrawable.currentIcon != ICON_PLAY &&
-                    this@MediaActionDrawable.currentIcon != ICON_PAUSE ||
-                    previousIcon != ICON_PLAY && previousIcon != ICON_PAUSE
+                this@MediaActionDrawable.currentIcon != ICON_PAUSE ||
+                previousIcon != ICON_PLAY && previousIcon != ICON_PAUSE
             ) {
                 if (this@MediaActionDrawable.currentIcon == ICON_NONE) {
                     paint2.alpha = (255 * (1.0f - transitionProgress)).toInt()
@@ -785,7 +787,7 @@ open class MediaActionDrawable : Drawable() {
                             95 * CubicBezierInterpolator.EASE_BOTH.getInterpolation(ms / 384)
                         } else if (ms < 484) {
                             95 -
-                                5 *
+                                    5 *
                                     CubicBezierInterpolator.EASE_BOTH.getInterpolation(
                                         (ms - 384) / 100.0f
                                     )
@@ -801,7 +803,7 @@ open class MediaActionDrawable : Drawable() {
                             -5 * CubicBezierInterpolator.EASE_BOTH.getInterpolation(ms / 100.0f)
                         } else if (ms < 484) {
                             -5 +
-                                95 *
+                                    95 *
                                     CubicBezierInterpolator.EASE_BOTH.getInterpolation(
                                         (ms - 100) / 384
                                     )
@@ -934,11 +936,11 @@ open class MediaActionDrawable : Drawable() {
 
         if (
             previousIcon == ICON_CANCEL ||
-                previousIcon == ICON_CANCEL_FILL ||
-                previousIcon == ICON_NONE &&
-                    this@MediaActionDrawable.currentIcon == ICON_CANCEL_FILL ||
-                previousIcon == ICON_EMPTY ||
-                previousIcon == ICON_CANCEL_PERCENT
+            previousIcon == ICON_CANCEL_FILL ||
+            previousIcon == ICON_NONE &&
+            this@MediaActionDrawable.currentIcon == ICON_CANCEL_FILL ||
+            previousIcon == ICON_EMPTY ||
+            previousIcon == ICON_CANCEL_PERCENT
         ) {
             downloadRadOffset += 360 * dt / 2500.0f
             downloadRadOffset = getCircleValue(downloadRadOffset)
@@ -954,7 +956,7 @@ open class MediaActionDrawable : Drawable() {
                     } else {
                         animatedDownloadProgress =
                             downloadProgressAnimationStart +
-                                progressDiff *
+                                    progressDiff *
                                     interpolator.getInterpolation(downloadProgressTime / 200.0f)
                     }
                 }

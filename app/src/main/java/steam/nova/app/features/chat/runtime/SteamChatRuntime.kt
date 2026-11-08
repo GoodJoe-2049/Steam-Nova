@@ -143,7 +143,7 @@ internal class SteamChatRuntime(context: Context) {
             "backgroundStatus" -> notifications.status()
             "backgroundEnable" -> synchronized(lock) { checkSession(lease); notifications.enable() }
             "backgroundDisable" -> synchronized(lock) { checkSession(lease); notifications.disable() }
-            "snapshot" -> repo.snapshot().also { value ->
+            "snapshot" -> repo.snapshot(forcePresence = args.optBoolean("refreshPresence")).also { value ->
                 synchronized(lock) { checkSession(lease); saveSummary(lease, value.put("groups", lease.groups)) }
             }
             "groups" -> repo.groups().also { value ->
@@ -156,7 +156,7 @@ internal class SteamChatRuntime(context: Context) {
                 val updates = lease.reads.drain()
                 for (index in 0 until updates.length()) values.put(updates.getJSONObject(index))
             }.put(JSONObject().put("type", "voice").put("value", lease.voice.snapshot()))
-            "friends" -> repo.friends()
+            "friends" -> repo.friends(forcePresence = args.optBoolean("refreshPresence"))
             "history" -> repo.history(args).also {
                 synchronized(lock) { checkSession(lease); disk.merge(SteamChatRepository.Target.parse(args).key, it.getJSONArray("messages"), it.getBoolean("more")) }
             }

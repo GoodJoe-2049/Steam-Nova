@@ -56,9 +56,9 @@ internal object SteamChatThreadAppearanceScript {
                 avatar?h(Image,{source:{uri:avatar},autoplay:true,onError:function(){failed[1](avatar);},transition:0,style:{width:size,height:size},accessibilityIgnoresInvertColors:true}):
                     text((p.name||'?').slice(0,1),{fontSize:size>30?20:14,lineHeight:size,textAlign:'center'}),
                 frame?h(Image,{pointerEvents:'none',source:{uri:frame},autoplay:true,transition:0,style:{position:'absolute',left:0,top:0,width:size,height:size,transform:size>30?[]:[{scale:1.2}]}}):null,
-                size>30?h(N.View,{pointerEvents:'none',style:{position:'absolute',right:0,top:0,bottom:0,width:2,backgroundColor:p.game?'#90ba3c':p.online?'#6dcff6':'#898989',opacity:p.personaState===3||p.personaState===4?0.5:1}}):null);
+                size>30?h(N.View,{pointerEvents:'none',style:{position:'absolute',right:0,top:0,bottom:0,width:2,backgroundColor:p.playing||p.game?'#90ba3c':p.online?'#6dcff6':'#898989',opacity:p.personaState===3||p.personaState===4?0.5:1}}):null);
         }
-        function Header(props){var state=env.useStore(),voice=chatVoiceUi(env),calling=voice.inThread(state.voice,props.target),insets=env.require(1486).useSafeAreaInsets(),p=props.profile||{},color=p.game?'#90ba3c':p.online?'#6dcff6':'#898989';
+        function Header(props){var state=env.useStore(),voice=chatVoiceUi(env),calling=voice.inThread(state.voice,props.target),insets=env.require(1486).useSafeAreaInsets(),p=props.profile||{},color=p.playing||p.game?'#90ba3c':p.online?'#6dcff6':'#898989';
             return h(N.View,{style:{paddingTop:insets.top||0,backgroundColor:'#1c232c'}},
                 h(N.View,{style:{height:56,borderBottomWidth:1,borderBottomColor:'#363b43',flexDirection:'row',alignItems:'center',paddingLeft:14,paddingRight:4}},
                     h(N.View,{pointerEvents:'none',style:{position:'absolute',top:0,left:0,right:0,height:1,backgroundColor:'rgba(71,71,71,0.3)'}}),

@@ -71,7 +71,10 @@ internal object SteamChatPresenceScript {
         function apply(profile){
             var p=values[profile.id];
             return Object.assign({},profile,{presence:p||null,presenceKnown:!!(p&&p.known),
-                personaState:p?p.personaState:0,online:!!(p&&p.known&&p.online),game:p&&p.online?p.game:''});
+                personaState:p?p.personaState:0,online:!!(p&&p.known&&p.online),
+                playing:!!(p&&p.online&&(p.playing||p.game)),game:p&&p.online?p.game:'',
+                richPresence:p&&p.online&&(p.playing||p.game)?p.richPresence||'':'',
+                gameId:p&&p.online?p.gameId:'0',appId:p&&p.online?p.appId:0});
         }
         return {accept:accept,remember:remember,apply:apply,reset:reset};
     }
@@ -94,18 +97,25 @@ internal object SteamChatPresenceScript {
         if(env.presenceUi)return env.presenceUi;
         var R=env.React,N=env.RN,h=R.createElement,t=moduleText;
         function Status(props){
-            var p=props.profile||{},icons=props.typing?[]:chatPresencePlatforms(p.presence);
-            var title=props.typing||p.game||(p.presenceKnown?t(p.online?'chat_online':'chat_offline'):'—');
-            var color=props.color||(p.game?'#90ba3c':p.online?'#6dcff6':'#898989'),size=props.fontSize||13;
+            var p=props.profile||{},playing=!!(p.playing||p.game),icons=props.typing||playing?[]:chatPresencePlatforms(p.presence);
+            var title=props.typing||(playing?(p.game||t('chat_in_game')):(p.presenceKnown?t(p.online?'chat_online':'chat_offline'):'—'));
+            var color=props.color||(playing?'#90ba3c':p.online?'#6dcff6':'#898989'),size=props.fontSize||13;
             var descriptions=icons.map(function(key){return t('chat_platform_'+key);});descriptions.push(title);
             return h(N.View,{accessible:true,accessibilityLabel:descriptions.join(', '),pointerEvents:'none',
                 style:[{flexDirection:'row',alignItems:'center',minWidth:0},props.style]},
                 icons.map(function(key){return h(N.Image,{key:key,accessible:false,source:{uri:chatPresenceIcons[key]},
                     fadeDuration:0,resizeMode:'contain',style:{width:size+3,height:size+3,marginRight:4,tintColor:color}});}),
-                h(N.Text,{numberOfLines:1,style:{fontSize:size,lineHeight:size+4,includeFontPadding:false,
+                h(N.Text,{numberOfLines:1,ellipsizeMode:'tail',style:{fontSize:size,lineHeight:props.lineHeight||size+4,includeFontPadding:false,
                     fontFamily:(env.threadFonts||{}).regular||'sans-serif',color:color,flexShrink:1}},title));
         }
-        env.presenceUi={Status:Status};return env.presenceUi;
+        function GameDetails(props){
+            var p=props.profile||{},text=p.online&&(p.playing||p.game)?p.richPresence||'':'';
+            if(!text.trim())return null;
+            return h(N.Text,{numberOfLines:1,ellipsizeMode:'tail',accessibilityLabel:text,
+                style:{fontSize:11,lineHeight:13,includeFontPadding:false,color:'#62813b',
+                    fontFamily:(env.threadFonts||{}).regular||'sans-serif'}},text);
+        }
+        env.presenceUi={Status:Status,GameDetails:GameDetails};return env.presenceUi;
     }
 """.trimIndent()
 }

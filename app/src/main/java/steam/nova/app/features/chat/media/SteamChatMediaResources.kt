@@ -36,7 +36,8 @@ internal object SteamChatMediaResources {
     )
 
     fun drawable(context: Context, name: String, tint: Boolean = true): Drawable =
-        checkNotNull(ResourcesCompat.getDrawable(ModuleLocalization.resources(context), ids.getValue(name), null)).mutate().also {
+        (if (name == "videoMore") SteamChatMediaPopupResources.drawable(context, popup = false)
+        else checkNotNull(ResourcesCompat.getDrawable(ModuleLocalization.resources(context), ids.getValue(name), null))).mutate().also {
             if (tint) it.setTint(Color.WHITE)
         }
 
@@ -48,7 +49,7 @@ internal object SteamChatMediaResources {
     fun source(context: Context): String {
         cached?.let { return it }
         val data = JSONObject()
-        ids.keys.filter { it != "preview" && it != "circle" }.forEach { name ->
+        (ids.keys + "videoMore").filter { it != "preview" && it != "circle" }.forEach { name ->
             val drawable = drawable(context, name)
             val bitmap = createBitmap(drawable.intrinsicWidth.coerceAtLeast(1), drawable.intrinsicHeight.coerceAtLeast(1))
             try {

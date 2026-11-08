@@ -43,28 +43,33 @@ internal object SteamChatMediaPresentationScript {
             return function(){subscribers[key]=(subscribers[key]||[]).filter(function(fn){return fn!==tick;});};
         },[value.key]);return value;}
         function useMotion(){var reduced=R.useState(false);R.useEffect(function(){var live=true;N.AccessibilityInfo.isReduceMotionEnabled().then(function(v){if(live)reduced[1](v);}).catch(function(){});var s=N.AccessibilityInfo.addEventListener('reduceMotionChanged',reduced[1]);return function(){live=false;s.remove();};},[]);return reduced[0];}
-        function NativeIcon(p){var owner=R.useRef('media-icon-'+(++serial)),ready=R.useState(false),mounted=R.useRef(true);
+        function NativeIcon(p){var owner=R.useRef('media-icon-'+(++serial)),ready=R.useState(0),mounted=R.useRef(true);
             R.useEffect(function(){mounted.current=true;return function(){mounted.current=false;env.request('mediaIcon',{owner:owner.current,detach:true}).catch(function(){});};},[]);
-            R.useEffect(function(){if(!ready[0])return;env.request('mediaIcon',{owner:owner.current,name:p.name,progress:p.progress||0,animated:true}).catch(function(){});},[ready[0],p.name,p.progress]);
-            return h(N.View,{testID:owner.current,collapsable:false,pointerEvents:'none',onLayout:function(){ready[1](true);},style:{width:p.size||24,height:p.size||24}});
+            R.useEffect(function(){if(!ready[0])return;env.request('mediaIcon',{owner:owner.current,name:p.name,progress:p.progress||0,circle:!!p.circle,pressed:!!p.pressed,animated:true}).catch(function(){});},[ready[0],p.name,p.progress,p.circle,p.pressed]);
+            return h(N.View,{testID:owner.current,collapsable:false,pointerEvents:'none',onLayout:function(){ready[1](function(n){return n+1;});},style:{width:p.size||24,height:p.size||24}});
         }
         function Icon(p){if(['play','pause','cancel'].indexOf(p.name)>=0||p.animated)return h(NativeIcon,p);
             var uri=chatMediaIcons[p.name];return uri?h(N.Image,{source:{uri:uri},resizeMode:'contain',accessible:false,style:{width:p.size||24,height:p.size||24}}):null;
         }
         function IconButton(p){return h(N.Pressable,{ref:p.buttonRef,onPress:p.onPress,disabled:p.disabled,hitSlop:4,accessibilityRole:'button',accessibilityLabel:p.label,accessibilityState:{disabled:!!p.disabled},style:function(s){return Object.assign({width:48,height:48,alignItems:'center',justifyContent:'center',opacity:p.disabled?0.4:s.pressed?0.6:1},p.style||{});}},h(Icon,{name:p.name,size:p.size,progress:p.progress}));}
-        function openMenu(button,setMenu){if(button.current&&button.current.measureInWindow)button.current.measureInWindow(function(x,y,w,ht){setMenu({x:x,y:y,width:w,height:ht});});else setMenu({y:8,height:48});}
-        function Reveal(p){var reduced=useMotion(),visible=R.useState(p.visible),fade=R.useRef(new N.Animated.Value(p.visible?1:0)).current;
-            R.useEffect(function(){if(p.visible)visible[1](true);var animation=N.Animated.timing(fade,{toValue:p.visible?1:0,duration:reduced?0:200,useNativeDriver:true});animation.start(function(result){if(result.finished&&!p.visible)visible[1](false);});return function(){animation.stop();};},[p.visible,reduced]);
-            var style={opacity:fade,transform:[{scale:fade.interpolate({inputRange:[0,1],outputRange:[0.85,1]})}]};
-            return visible[0]?h(N.Animated.View,{pointerEvents:p.visible?'box-none':'none',style:[p.style,style]},p.children):null;
+        function VideoBadge(p){var owner=R.useRef('media-icon-'+(++serial)).current,ready=R.useState(0),hitWidth=R.useState(0);
+            R.useEffect(function(){return function(){env.request('mediaIcon',{owner:owner,detach:true}).catch(function(){});};},[owner]);
+            R.useEffect(function(){if(!ready[0])return;var live=true;env.request('mediaIcon',{owner:owner,name:'videoBadge',ready:p.ready,downloading:p.downloading,
+                time:p.time,size:p.size||0,received:p.received||0,muted:p.muted,width:p.width,unknownSize:t('chat_media_unknown_size')})
+                .then(function(v){if(live)hitWidth[1](v.hitWidth||0);}).catch(function(){});return function(){live=false;};
+            },[ready[0],p.ready,p.downloading,p.time,p.size,p.received,p.muted,p.width]);
+            return h(R.Fragment,null,h(N.View,{testID:owner,collapsable:false,pointerEvents:'none',onLayout:function(){ready[1](function(n){return n+1;});},style:{position:'absolute',top:0,left:0,width:p.width,height:40}}),
+                h(N.Pressable,{onPress:p.onPress,accessibilityRole:'button',accessibilityLabel:p.label,style:{position:'absolute',top:p.ready?4:8,left:p.ready?4:8,width:hitWidth[0],height:p.ready?16.5:30}}));
         }
-        function Popup(p){var reduced=useMotion(),fade=R.useRef(new N.Animated.Value(0)).current,dims=N.useWindowDimensions(),anchor=p.anchor||{y:8,height:48},height=p.rows.length*48+12;
-            R.useEffect(function(){N.Animated.timing(fade,{toValue:1,duration:reduced?0:160,useNativeDriver:true}).start();},[reduced]);
-            function close(after){N.Animated.timing(fade,{toValue:0,duration:reduced?0:120,useNativeDriver:true}).start(function(){p.close();if(typeof after==='function')after();});}
-            return h(N.Modal,{transparent:true,visible:true,onRequestClose:close,animationType:'none'},h(N.View,{style:{flex:1}},
-                h(N.Pressable,{onPress:close,accessibilityLabel:t('chat_close'),style:abs}),
-                h(N.Animated.View,{style:{position:'absolute',right:12,top:Math.max(8,Math.min(anchor.y+anchor.height,dims.height-height-8)),width:248,maxWidth:'90%',paddingVertical:6,borderRadius:12,backgroundColor:'#232932',elevation:14,opacity:fade,transform:[{scale:fade.interpolate({inputRange:[0,1],outputRange:[0.95,1]})}]}},
-                    p.rows.map(function(row){return h(N.Pressable,{key:row.key,accessibilityRole:'button',accessibilityLabel:row.label,onPress:function(){close(row.run);},style:function(s){return {height:48,paddingHorizontal:16,flexDirection:'row',alignItems:'center',gap:16,backgroundColor:s.pressed?'#35404d':'transparent'};}},h(Icon,{name:row.icon,size:22}),ui.label(row.label,{fontSize:15,color:row.key==='delete'?'#f1a7a0':'#dcdedf'}));}))));
+        function Popup(p){var owner=R.useRef('media-menu-'+(++serial)).current,current=R.useRef(p);current.current=p;
+            R.useEffect(function(){var live=true,event=N.DeviceEventEmitter.addListener('SteamNovaChatMediaMenu',function(raw){
+                var e;try{e=typeof raw==='string'?JSON.parse(raw):raw;}catch(ignore){return;}if(!live||e.owner!==owner)return;
+                var row=current.current.rows.find(function(r){return r.key===e.action;});current.current.close();if(row)row.run();
+            });
+                env.request('mediaMenu',{owner:owner,sourceTag:p.anchor.sourceTag,x:p.anchor.x||0,y:p.anchor.y||0,longPress:!!p.anchor.longPress,
+                    rows:p.rows.map(function(r){return {key:r.key,label:r.label};})}).catch(function(e){if(live){current.current.close();N.Alert.alert(t('chat_attachment'),ui.errorText(e.message));}});
+                return function(){live=false;event.remove();env.request('mediaMenu',{owner:owner,detach:true}).catch(function(){});};
+            },[owner]);return null;
         }
         function Actions(p){var state=env.useStore(),forward=R.useState(false),search=R.useState(''),busy=R.useState(false),error=R.useState('');
             R.useEffect(function(){if(p.blocked)p.blocked(forward[0]);return function(){if(p.blocked)p.blocked(false);};},[forward[0]]);
@@ -96,7 +101,7 @@ internal object SteamChatMediaPresentationScript {
         var videoComponent;
         function Video(){if(videoComponent)return videoComponent;try{videoComponent=env.require(2551).Video;}catch(ignore){}return videoComponent;}
         function useForeground(){var active=R.useState(N.AppState.currentState==='active');R.useEffect(function(){var sub=N.AppState.addEventListener('change',function(s){active[1](s==='active');});return function(){sub.remove();};},[]);return active[0];}
-        function Card(p){var media=p.media,value=useMedia(media),menu=R.useState(false),status=R.useState({}),paused=R.useState(false),failed=R.useState(false),muted=R.useState(true),blocked=R.useState(false),button=R.useRef(null),reduced=useMotion(),foreground=useForeground();
+        function Card(p){var media=p.media,value=useMedia(media),menu=R.useState(false),status=R.useState({}),paused=R.useState(false),failed=R.useState(false),muted=R.useState(true),blocked=R.useState(false),reduced=useMotion(),foreground=useForeground();
             R.useEffect(function(){if(!p.active)return;env.request('mediaStatus',{url:media.url}).then(function(v){publish(value,v);poll(value);}).catch(function(){});},[p.active,media.url]);
             var video=media.kind==='video'||value.mime&&value.mime.indexOf('video/')===0,ready=value.state==='ready',downloading=value.state==='downloading';
             var ratio=(value.width||media.width)/(value.height||media.height),dims=N.useWindowDimensions(),maxWidth=Math.min(360,dims.width-68),height=Math.min(420,maxWidth/(ratio||4/3)),width=Math.min(maxWidth,height*(ratio||4/3));
@@ -110,15 +115,18 @@ internal object SteamChatMediaPresentationScript {
                 frame?h(N.Image,{source:{uri:frame},resizeMode:'cover',style:abs,fadeDuration:reduced?0:160}):null,
                 video&&ready&&Player?h(Player,{source:{uri:value.uri},resizeMode:'cover',style:abs,shouldPlay:playing,isMuted:muted[0],isLooping:true,useNativeControls:false,progressUpdateIntervalMillis:200,
                     onPlaybackStatusUpdate:status[1],onError:function(){failed[1](true);},onReadyForDisplay:function(event){var n=event.naturalSize||{};if(n.width&&n.height)publish(value,{width:n.width,height:n.height});}}):null,
-                h(N.Pressable,{onPress:open,onLongPress:video?undefined:function(e){menu[1]({y:e.nativeEvent.pageY||8,height:0});},accessibilityRole:'button',accessibilityLabel:video?t('chat_media_view_video'):t('chat_view_image'),style:abs}),
+                h(N.Pressable,{onPress:open,onLongPress:function(e){menu[1]({sourceTag:cardTag,x:e.nativeEvent.locationX,y:e.nativeEvent.locationY,longPress:true});},accessibilityRole:'button',accessibilityLabel:video?t('chat_media_view_video'):t('chat_view_image'),style:abs}),
                 video?h(N.View,{pointerEvents:'box-none',style:abs},
-                    h(N.Pressable,{onPress:function(){if(downloading)cancel(value).catch(function(){});else if(ready)muted[1](!muted[0]);else start();},accessibilityRole:'button',accessibilityLabel:downloading?t('chat_media_cancel_download'):ready?(muted[0]?t('chat_media_unmute'):t('chat_media_mute')):t('chat_media_download'),
-                        style:function(s){return {position:'absolute',top:6,left:6,minHeight:48,paddingHorizontal:8,flexDirection:'row',alignItems:'center',gap:6,borderRadius:14,backgroundColor:'rgba(10,15,21,.65)',opacity:s.pressed?0.65:1};}},
-                        h(N.View,{style:{width:30,height:30,alignItems:'center',justifyContent:'center'}},!ready?h(NativeIcon,{name:downloading?'cancel':'download',progress:value.size?value.received/value.size:0,size:30}):muted[0]?h(Icon,{name:'mute',size:22}):null),
-                        h(N.View,null,ui.label(value.duration||status[0].durationMillis?duration(ready?seconds:value.duration):'--:--',{fontSize:13,lineHeight:17,color:'#fff'}),!ready?ui.label(downloading?(value.received?size(value.received):'0 KB')+' / '+size(value.size):size(value.size),{fontSize:12,lineHeight:16,color:'#fff'}):null)),
-                    h(Reveal,{visible:!ready||paused[0]||failed[0],style:{position:'absolute',left:'50%',top:'50%',marginLeft:-28,marginTop:-28}},h(IconButton,{name:downloading?'cancel':'play',size:48,progress:value.size?value.received/value.size:0,label:downloading?t('chat_media_cancel_download'):t('chat_media_play'),onPress:function(){if(downloading)cancel(value).catch(function(){});else start();},style:{width:56,height:56,borderRadius:28,backgroundColor:'rgba(10,15,21,.65)'}})),
-                    ready&&playing?h(IconButton,{name:'pause',label:t('chat_media_pause'),onPress:function(){paused[1](true);},style:{position:'absolute',bottom:0,right:0,backgroundColor:'rgba(10,15,21,.35)',borderTopLeftRadius:12}}):null):null,
-                video?h(IconButton,{buttonRef:button,name:'more',label:t('chat_message_actions'),onPress:function(){openMenu(button,menu[1]);},style:{position:'absolute',top:2,right:2,borderRadius:24,backgroundColor:'rgba(10,15,21,.25)'}}):null,
+                    h(VideoBadge,{ready:ready,downloading:downloading,time:value.duration||status[0].durationMillis?duration(ready?seconds:value.duration):'--:--',
+                        size:value.size,received:value.received,muted:muted[0],width:width,
+                        onPress:function(){if(downloading)cancel(value).catch(function(){});else if(ready)muted[1](!muted[0]);else start();},
+                        label:downloading?t('chat_media_cancel_download'):ready?(muted[0]?t('chat_media_unmute'):t('chat_media_mute')):t('chat_media_download')}),
+                    h(N.Pressable,{pointerEvents:ready&&!paused[0]&&!failed[0]?'none':'auto',disabled:ready&&!paused[0]&&!failed[0],accessible:!ready||paused[0]||failed[0],accessibilityRole:'button',accessibilityLabel:t('chat_media_play'),
+                        onPress:function(){if(downloading)open();else start();},style:{position:'absolute',left:'50%',top:'50%',marginLeft:-24,marginTop:-24,width:48,height:48}},
+                        function(s){return h(NativeIcon,{name:!ready||paused[0]||failed[0]?'play':'none',size:48,circle:true,pressed:s.pressed});})):null,
+                video?h(N.Pressable,{accessibilityRole:'button',accessibilityLabel:t('chat_message_actions'),onPress:function(){menu[1]({sourceTag:cardTag,y:8.1});},
+                    style:{position:'absolute',top:4.1,right:-6,width:40,height:34}},
+                    h(N.Image,{source:{uri:chatMediaIcons.videoMore},resizeMode:'contain',accessible:false,style:{position:'absolute',left:20,top:4,width:6,height:18}})):null,
                 value.state==='failed'||failed[0]||video&&!Player?ui.label(t('chat_media_failed'),{position:'absolute',bottom:6,left:6,right:6,fontSize:12,color:'#fff',backgroundColor:'rgba(10,15,21,.8)',padding:5}):null,
                 h(Actions,{media:media,item:p.item,target:p.target,open:menu[0],blocked:blocked[1],close:function(){menu[1](false);}}));
         }

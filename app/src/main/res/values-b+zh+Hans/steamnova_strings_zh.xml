@@ -318,6 +318,7 @@
     <string name="chat_notification_self">"我"</string>
     <string name="chat_offline">"离线"</string>
     <string name="chat_online">"在线"</string>
+    <string name="chat_in_game">"游戏中"</string>
     <string name="chat_platform_mobile">移动端</string>
     <string name="chat_platform_big_picture">大屏幕模式</string>
     <string name="chat_platform_vr">虚拟现实</string>

@@ -192,6 +192,7 @@ internal object ModuleScriptLocalization {
         "chat_notification_permission_title" to R.string.chat_notification_permission_title,
         "chat_offline" to R.string.chat_offline,
         "chat_online" to R.string.chat_online,
+        "chat_in_game" to R.string.chat_in_game,
         "chat_platform_mobile" to R.string.chat_platform_mobile,
         "chat_platform_big_picture" to R.string.chat_platform_big_picture,
         "chat_platform_vr" to R.string.chat_platform_vr,

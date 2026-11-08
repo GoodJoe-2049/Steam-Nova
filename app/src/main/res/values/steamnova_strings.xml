@@ -328,6 +328,7 @@
     <string name="chat_notification_self">"You"</string>
     <string name="chat_offline">"Offline"</string>
     <string name="chat_online">"Online"</string>
+    <string name="chat_in_game">"In game"</string>
     <string name="chat_platform_mobile">Mobile</string>
     <string name="chat_platform_big_picture">Big Picture</string>
     <string name="chat_platform_vr">VR</string>

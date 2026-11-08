@@ -1,6 +1,10 @@
 package steam.nova.app.features.chat.data
 
+import android.content.res.Resources
 import androidx.core.net.toUri
+import steam.nova.app.core.ModuleLanguage
+import steam.nova.app.core.ModuleLocalization
+import steam.nova.app.features.chat.diagnostics.SteamChatDiagnostics
 import steam.nova.app.features.chat.network.SteamChatAccount
 import steam.nova.app.features.chat.network.SteamChatConnection
 import steam.nova.app.features.chat.network.SteamChatFailure
@@ -22,7 +26,8 @@ internal class SteamChatRepository(
     private val profiles = ConcurrentHashMap<String, JSONObject>()
     @Volatile private var closed = false
     @Volatile private var activeGroups: String? = null
-    private val presence = SteamChatPresence(::loadPresence, ::enqueue)
+    private var requestedPersonaEpoch = 0L
+    private val presence = SteamChatPresence(::loadPresence, ::loadPresenceGames, ::loadRichPresence, ::enqueue)
     private val cm = SteamChatConnection(account, ::receive) { connected ->
         if (connected) activeGroups = null
         val epoch = if (connected) presence.generation() else presence.reset()
@@ -33,15 +38,35 @@ internal class SteamChatRepository(
         enqueue(JSONObject().put("type", "nicknames").put("names", names))
     }
 
-    private fun loadPresence(ids: List<String>): P.Fields {
+    private fun loadPresence(ids: List<String>, force: Boolean): P.Fields {
         checkAccount()
+        val epoch = presence.generation()
+        if (force || requestedPersonaEpoch != epoch) {
+            // The web requests complete friend states through Chat, not ClientRequestFriendData(815).
+            runCatching { call("Chat.RequestFriendPersonaStates") }
+                .onSuccess { if (presence.generation() == epoch) requestedPersonaEpoch = epoch }
+                .onFailure { SteamChatDiagnostics.failure("presence.request", it) }
+        }
         val request = P.Writer().apply { ids.forEach { number(1, it.toLong()) } }
-        // Snapshot work has its own executor; subscription and RPC waits never run in onMessage.
-        cm.requestFriendData(ids)
         return call("Player.GetPlayerLinkDetails", request)
     }
 
+    private fun loadPresenceGames(ids: List<Long>): P.Fields {
+        val chinese = when (ModuleLocalization.language) {
+            ModuleLanguage.SimplifiedChinese -> true
+            ModuleLanguage.English -> false
+            ModuleLanguage.System -> Resources.getSystem().configuration.locales[0].language == "zh"
+        }
+        return call("Community.GetApps", P.Writer().apply {
+            ids.forEach { number(1, it) }
+            number(2, if (chinese) 6 else 0)
+        })
+    }
+
     fun foreground(value: Boolean) = cm.foreground(value)
+
+    private fun loadRichPresence(appId: Long, language: String): P.Fields =
+        call("Community.GetAppRichPresenceLocalization", P.Writer().number(1, appId).text(2, language))
 
     fun checkAccount() {
         if (closed) throw SteamChatFailure("ACCOUNT_CHANGED")
@@ -64,7 +89,7 @@ internal class SteamChatRepository(
         return JSONArray(ids.map(::profile))
     }
 
-    fun snapshot(): JSONObject {
+    fun snapshot(forcePresence: Boolean = false): JSONObject {
         checkAccount()
         val sessions = SteamChatHttp.friendMessages(account, "GetActiveMessageSessions", P.Writer().number(1, 0).number(2, 1))
             .messages(1).map { item ->
@@ -72,7 +97,7 @@ internal class SteamChatRepository(
                 JSONObject().put("key", "p:$peer").put("peer", peer).put("kind", "private")
                     .put("timestamp", item.number(2)).put("lastRead", item.number(3)).put("unread", item.number(4))
             }
-        runCatching { loadProfiles(sessions.map { it.getString("peer") } + account.id) }
+        runCatching { loadProfiles(sessions.map { it.getString("peer") } + account.id, forcePresence) }
         checkAccount()
         sessions.forEach { row -> row.put("profile", profile(row.getString("peer"))) }
         return JSONObject().put("sessions", JSONArray(sessions)).put("self", profile(account.id)).put("nicknames", nicknames.snapshot())
@@ -132,7 +157,7 @@ internal class SteamChatRepository(
         return JSONObject().put("avatarFrame", image(3)).put("animatedAvatar", image(4))
     }
 
-    fun friends(): JSONArray {
+    fun friends(forcePresence: Boolean = false): JSONArray {
         checkAccount()
         val root = SteamChatHttp.api(account, "/ISteamUserOAuth/GetFriendList/v1/", mapOf("steamid" to account.id, "relationship" to "friend"))
         val list = (root.optJSONObject("friendslist") ?: root.optJSONObject("response") ?: root).optJSONArray("friends") ?: JSONArray()
@@ -142,7 +167,7 @@ internal class SteamChatRepository(
             row.optString("steamid", row.optString("ulfriendid"))
                 .takeIf { it.matches(STEAM_ID) && (relation == "friend" || relation == "3") }
         }
-        loadProfiles(ids)
+        loadProfiles(ids, forcePresence)
         checkAccount()
         return JSONArray(ids.map(::profile).sortedBy { it.optString("name").lowercase() })
     }
@@ -155,11 +180,11 @@ internal class SteamChatRepository(
             .put("nickname", nickname).put("name", nickname.ifBlank { personaName }).put("presence", presence.profile(id))
     }
 
-    private fun loadProfiles(ids: List<String>) {
+    private fun loadProfiles(ids: List<String>, forcePresence: Boolean = false) {
         nicknames.refresh()
         ids.distinct().filter { it.matches(STEAM_ID) }.chunked(100).forEach { batch ->
             checkAccount()
-            val presenceEpoch = presence.generation()
+            val presenceStamp = presence.stamp()
             val payload = SteamChatHttp.api(account, "/ISteamUserOAuth/GetUserSummaries/v1/", mapOf("steamids" to batch.joinToString(",")))
             val players = (payload.optJSONObject("response") ?: payload).optJSONArray("players") ?: JSONArray()
             for (i in 0 until players.length()) {
@@ -169,9 +194,9 @@ internal class SteamChatRepository(
                     .put("personaName", player.optString("personaname", id)).put("name", player.optString("personaname", id))
                     .put("avatar", player.optString("avatarmedium", player.optString("avatar")))
                     .put("personaState", player.optInt("personastate")).put("online", player.optInt("personastate") in 1..6).put("game", player.optString("gameextrainfo"))
-                presence.seed(player, presenceEpoch)
+                presence.mergeProfile(player, presenceStamp)
             }
-            presence.refresh(batch)
+            presence.refresh(batch, force = forcePresence)
         }
     }
 

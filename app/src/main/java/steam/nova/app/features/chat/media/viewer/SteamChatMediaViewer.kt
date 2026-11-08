@@ -24,6 +24,7 @@ import androidx.core.graphics.drawable.toDrawable
 import androidx.core.graphics.withTranslation
 import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
+import androidx.core.view.doOnPreDraw
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -33,6 +34,7 @@ import kotlin.math.abs
 import kotlin.math.min
 import org.json.JSONObject
 import steam.nova.app.features.chat.media.SteamChatMediaResources
+import steam.nova.app.features.chat.media.SteamChatMediaMenu
 import steam.nova.app.features.chat.media.SteamChatMediaTransfer
 import steam.nova.app.features.chat.media.viewer.AndroidUtilities.dp
 import steam.nova.app.features.chat.network.SteamChatAccount
@@ -47,7 +49,7 @@ internal class SteamChatMediaViewer(
     private val transfer: SteamChatMediaTransfer,
     args: JSONObject,
     private val event: (JSONObject) -> Unit,
-) : ComponentDialog(activity, android.R.style.Theme_Black_NoTitleBar_Fullscreen) {
+) : ComponentDialog(activity, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen) {
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor {
         Thread(it, "SteamNovaMediaViewer").apply { isDaemon = true }
@@ -100,6 +102,14 @@ internal class SteamChatMediaViewer(
     private var buffering = false
     private var closed = false
     private var closing = false
+    private var opening = true
+    private var closingAnimation: ValueAnimator? = null
+    private var pendingImage: DecodedImage? = null
+
+    private data class DecodedImage(
+        val bitmap: Bitmap,
+        val animation: android.graphics.drawable.Drawable?,
+    )
     private var generation = 0
     private var transferPending = false
     private var status = JSONObject()
@@ -107,7 +117,7 @@ internal class SteamChatMediaViewer(
     private var bars = true
     private var barsProgress = 1f
     private var barsAnimator: ValueAnimator? = null
-    private var menu: PopupWindow? = null
+    private var menu: SteamChatMediaMenu? = null
     private var resumeAfterFocus = false
     private var resumeAfterAction = false
     private val originalOrientation = activity.requestedOrientation
@@ -159,7 +169,7 @@ internal class SteamChatMediaViewer(
                     stage.offsetX = x
                     stage.offsetY = y
                     // PhotoViewer.onDraw: drag-to-close background fades to a minimum alpha of 127.
-                    if (!transition.running && !closing) {
+                    if (!opening && !transition.running && !closing) {
                         val maximum = (stage.width / 4f).coerceAtLeast(1f)
                         val alpha =
                             if (scale == 1f)
@@ -178,13 +188,14 @@ internal class SteamChatMediaViewer(
 
                 override fun centralTap(x: Float, y: Float): Boolean {
                     if (
-                        (video() || status.optString("state") == "downloading") &&
-                            abs(x - stage.width / 2f) <= dp(50f) &&
-                            abs(y - stage.height / 2f) <= dp(50f) &&
-                            (bars || !playing())
-                    )
+                        (video() || local == null) &&
+                        abs(x - stage.width / 2f) <= dp(50f) &&
+                        abs(y - stage.height / 2f) <= dp(50f) &&
+                        (bars || !playing())
+                    ) {
                         singleTap(x, y)
-                    return true
+                        return true
+                    }
                     return false
                 }
 
@@ -277,11 +288,11 @@ internal class SteamChatMediaViewer(
     private val hideBars = Runnable {
         if (
             playing() &&
-                resumed &&
-                menu == null &&
-                !controls.seekBar.isDragging &&
-                !buffering &&
-                !rewinder.active
+            resumed &&
+            menu == null &&
+            !controls.seekBar.isDragging &&
+            !buffering &&
+            !rewinder.active
         )
             toggleBars(false)
     }
@@ -311,7 +322,8 @@ internal class SteamChatMediaViewer(
 
     init {
         require(items.length() in 1..200)
-        root.setBackgroundColor(Color.BLACK)
+        root.setBackgroundColor(Color.TRANSPARENT)
+        root.alpha = 0f
         root.addView(stage, FrameLayout.LayoutParams(-1, -1))
         root.addView(header, FrameLayout.LayoutParams(-1, dp(56f), Gravity.TOP))
         header.setBackgroundColor(0x7f000000)
@@ -378,6 +390,7 @@ internal class SteamChatMediaViewer(
                     width: Int,
                     height: Int,
                 ) {
+                    if (closed || closing || texture !== stage.texture.surfaceTexture) return
                     surface?.release()
                     surface = Surface(texture)
                     player?.setSurface(surface)
@@ -389,17 +402,22 @@ internal class SteamChatMediaViewer(
                     width: Int,
                     height: Int,
                 ) {
-                    stage.transformVideo()
+                    if (texture === stage.texture.surfaceTexture) stage.transformVideo()
                 }
 
                 override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean {
-                    player?.setSurface(null)
-                    surface?.release()
-                    surface = null
+                    if (texture === stage.texture.surfaceTexture) {
+                        player?.setSurface(null)
+                        surface?.release()
+                        surface = null
+                    }
                     return true
                 }
 
-                override fun onSurfaceTextureUpdated(texture: SurfaceTexture) = Unit
+                override fun onSurfaceTextureUpdated(texture: SurfaceTexture) {
+                    if (!closed && !closing && texture === stage.texture.surfaceTexture)
+                        stage.onVideoFrame()
+                }
             }
         forwardIcon.setDelegate(
             object : VideoForwardDrawable.VideoForwardDrawableDelegate {
@@ -427,11 +445,16 @@ internal class SteamChatMediaViewer(
         }
 
     override fun show() {
-        super.show()
         window?.apply {
             setLayout(-1, -1)
             setBackgroundDrawable(Color.TRANSPARENT.toDrawable())
-            addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            setFormat(PixelFormat.TRANSLUCENT)
+            clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            setWindowAnimations(0)
+            addFlags(
+                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                        WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+            )
             WindowCompat.setDecorFitsSystemWindows(this, false)
             WindowCompat.getInsetsController(this, decorView).apply {
                 isAppearanceLightStatusBars = false
@@ -468,21 +491,18 @@ internal class SteamChatMediaViewer(
             }
             insets
         }
-        root.requestApplyInsets()
         load()
         main.post(tick)
-        root.post {
-            if (closed || closing) return@post
-            val ratio =
-                media.optDouble("width", 1.0).toFloat() / media.optDouble("height", 1.0).toFloat()
+        root.doOnPreDraw {
+            if (closed || closing) return@doOnPreDraw
             if (
-                !transition.run(root, stage, stage.currentBitmap, true, ratio, ::transitionChrome) {
-                    root.setBackgroundColor(Color.BLACK)
-                }
+                transition.run(root, stage, null, true, ::transitionChrome, finish = ::finishOpening)
             ) {
-                // PhotoViewer's no-place-provider entry branch.
-                root.alpha = 0f
-                root.animate().alpha(1f).setDuration(220).start()
+                root.alpha = 1f
+            } else {
+                stage.alpha = 1f
+                transitionChrome(1f)
+                root.animate().alpha(1f).setDuration(220).withEndAction(::finishOpening).start()
                 header.translationY = -dp(32f).toFloat()
                 header
                     .animate()
@@ -493,6 +513,25 @@ internal class SteamChatMediaViewer(
                     .start()
             }
         }
+        super.show()
+        window?.setLayout(-1, -1)
+        root.requestApplyInsets()
+    }
+
+    private fun finishOpening() {
+        if (closed || closing) return
+        opening = false
+        root.setBackgroundColor(Color.BLACK)
+        pendingImage?.let { stage.decoded(it.bitmap, it.animation) }
+        pendingImage = null
+        stage.revealVideo()
+        scheduleHide()
+    }
+
+    private fun clearPendingImage() {
+        pendingImage?.bitmap?.recycle()
+        (pendingImage?.animation as? android.graphics.drawable.Animatable)?.stop()
+        pendingImage = null
     }
 
     init {
@@ -506,7 +545,9 @@ internal class SteamChatMediaViewer(
 
     private fun load() {
         if (index != openingIndex) transition.restoreSource()
+        else if (!opening) transition.hideSource()
         generation++
+        clearPendingImage()
         transferPending = false
         rewinder.stop()
         releasePlayer()
@@ -518,7 +559,7 @@ internal class SteamChatMediaViewer(
         status = JSONObject()
         val neighbor = stage.neighborBitmap(media.optString("url"))
         stage.animation(null)
-        stage.bitmap(neighbor)
+        stage.bitmap(neighbor ?: if (index == openingIndex) transition.copyThumbnail() else null)
         stage.clearNeighbors()
         stage.videoWidth = media.optInt("width", 1)
         stage.videoHeight = media.optInt("height", 1)
@@ -566,7 +607,7 @@ internal class SteamChatMediaViewer(
                         .getOrNull()
                     val video =
                         item.optString("kind") == "video" ||
-                            result?.optString("mime")?.startsWith("video/") == true
+                                result?.optString("mime")?.startsWith("video/") == true
                     val uri = result?.optString(if (video) "poster" else "uri").orEmpty()
                     val image =
                         if (uri.startsWith("file:"))
@@ -658,8 +699,8 @@ internal class SteamChatMediaViewer(
                         }
                         if (
                             !video() &&
-                                operation == "mediaInfo" &&
-                                next.optString("state") == "idle"
+                            operation == "mediaInfo" &&
+                            next.optString("state") == "idle"
                         )
                             request("mediaDownload")
                         if (next.optString("state") == "failed") failure()
@@ -674,8 +715,8 @@ internal class SteamChatMediaViewer(
         val ticket = generation
         val animated =
             !video() &&
-                status.optString("mime") in setOf("image/gif", "image/webp") &&
-                file == local
+                    status.optString("mime") in setOf("image/gif", "image/webp") &&
+                    file == local
         worker.execute {
             val animation =
                 if (animated) runCatching { SteamChatImageDecoder.animation(file) }.getOrNull()
@@ -685,9 +726,13 @@ internal class SteamChatMediaViewer(
                 if (closed || closing || ticket != generation) {
                     image?.recycle()
                     (animation as? android.graphics.drawable.Animatable)?.stop()
+                } else if (image != null) {
+                    if (opening) {
+                        clearPendingImage()
+                        pendingImage = DecodedImage(image, animation)
+                    } else stage.decoded(image, animation)
                 } else {
-                    if (image != null) stage.bitmap(image)
-                    stage.animation(animation)
+                    (animation as? android.graphics.drawable.Animatable)?.stop()
                 }
             }
         }
@@ -710,12 +755,15 @@ internal class SteamChatMediaViewer(
                 setSurface(surface)
                 setDataSource(file.path)
                 setOnVideoSizeChangedListener { _, width, height ->
+                    if (candidate !== player || ticket != generation || closed || closing)
+                        return@setOnVideoSizeChangedListener
                     stage.videoWidth = width
                     stage.videoHeight = height
                     stage.transformVideo()
                 }
                 setOnPreparedListener { p ->
-                    if (ticket != generation || closed || closing) return@setOnPreparedListener
+                    if (p !== player || ticket != generation || closed || closing)
+                        return@setOnPreparedListener
                     prepared = true
                     stage.texture.visibility = View.VISIBLE
                     stage.transformVideo()
@@ -730,6 +778,12 @@ internal class SteamChatMediaViewer(
                     stage.invalidate()
                 }
                 setOnInfoListener { _, what, _ ->
+                    if (candidate !== player || ticket != generation || closed || closing)
+                        return@setOnInfoListener false
+                    if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
+                        stage.videoRendering = true
+                        stage.revealVideo()
+                    }
                     if (what == MediaPlayer.MEDIA_INFO_BUFFERING_START) buffering = true
                     if (what == MediaPlayer.MEDIA_INFO_BUFFERING_END) {
                         buffering = false
@@ -738,6 +792,8 @@ internal class SteamChatMediaViewer(
                     false
                 }
                 setOnCompletionListener {
+                    if (candidate !== player || ticket != generation || closed || closing)
+                        return@setOnCompletionListener
                     desiredPlaying = false
                     photoProgress.setBackgroundState(
                         PhotoProgressView.PROGRESS_PLAY,
@@ -747,6 +803,8 @@ internal class SteamChatMediaViewer(
                     toggleBars(true)
                 }
                 setOnErrorListener { _, _, _ ->
+                    if (candidate !== player || ticket != generation || closed || closing)
+                        return@setOnErrorListener true
                     failure()
                     releasePlayer()
                     true
@@ -809,8 +867,8 @@ internal class SteamChatMediaViewer(
     private fun singleTap(x: Float, y: Float) {
         if (
             (video() || local == null) &&
-                abs(x - stage.width / 2f) <= dp(50f) &&
-                abs(y - stage.height / 2f) <= dp(50f)
+            abs(x - stage.width / 2f) <= dp(50f) &&
+            abs(y - stage.height / 2f) <= dp(50f)
         ) {
             if (!prepared) {
                 if (local != null) {
@@ -854,6 +912,7 @@ internal class SteamChatMediaViewer(
     private fun toggleBars(show: Boolean, animated: Boolean = true) {
         barsAnimator?.removeAllListeners()
         barsAnimator?.cancel()
+        barsAnimator = null
         bars = show
         header.visibility = View.VISIBLE
         if (show && playing()) scheduleHide() else main.removeCallbacks(hideBars)
@@ -869,7 +928,7 @@ internal class SteamChatMediaViewer(
             controls.controlsProgress = value
             stage.invalidate()
         }
-        if (animated)
+        if (animated) {
             barsAnimator =
                 ValueAnimator.ofFloat(barsProgress, destination).apply {
                     duration = 200
@@ -878,6 +937,8 @@ internal class SteamChatMediaViewer(
                     addListener(
                         object : AnimatorListenerAdapter() {
                             override fun onAnimationEnd(animation: Animator) {
+                                if (barsAnimator !== animation) return
+                                barsAnimator = null
                                 if (!bars) {
                                     header.visibility = View.INVISIBLE
                                     captionScroll.visibility = View.GONE
@@ -887,9 +948,16 @@ internal class SteamChatMediaViewer(
                             }
                         }
                     )
-                    start()
                 }
-        else apply(destination)
+            barsAnimator?.start()
+        } else {
+            apply(destination)
+            if (!show) {
+                header.visibility = View.INVISIBLE
+                captionScroll.visibility = View.GONE
+                if (video() && !controls.looping) controls.visibility = View.INVISIBLE
+            }
+        }
         if (show && video()) controls.visibility = View.VISIBLE
         if (show && caption.text.isNotEmpty()) captionScroll.visibility = View.VISIBLE
         window?.let { viewerWindow ->
@@ -904,11 +972,13 @@ internal class SteamChatMediaViewer(
         main.removeCallbacks(hideBars)
         if (
             !closed &&
-                bars &&
-                playing() &&
-                activity
-                    .getSystemService(AccessibilityManager::class.java)
-                    ?.isTouchExplorationEnabled != true
+            !opening &&
+            !closing &&
+            bars &&
+            playing() &&
+            activity
+                .getSystemService(AccessibilityManager::class.java)
+                ?.isTouchExplorationEnabled != true
         )
             main.postDelayed(hideBars, 3000)
     }
@@ -965,12 +1035,14 @@ internal class SteamChatMediaViewer(
         pause()
         stage.animateImage(false)
         event(JSONObject().put("type", "action").put("action", type).put("index", index))
+        transition.restoreSource()
         hide()
     }
 
     fun actionFinished() {
         if (!closed && !closing) {
             super.show()
+            if (index == openingIndex) transition.hideSource()
             stage.animateImage(resumed)
             toggleBars(true)
             if (prepared && resumeAfterAction) play()
@@ -981,61 +1053,19 @@ internal class SteamChatMediaViewer(
     private fun openMenu() {
         if (menu != null) return
         main.removeCallbacks(hideBars)
-        val content =
-            LinearLayout(activity).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(0, dp(8f), 0, dp(8f))
-                setBackgroundColor(0xff232932.toInt())
-            }
-        val popup =
-            PopupWindow(content, dp(224f), -2, true).apply {
-                elevation = dp(8f).toFloat()
-                setBackgroundDrawable(Color.TRANSPARENT.toDrawable())
-                isOutsideTouchable = true
-            }
-        for ((type, icon, key) in
-            listOf(
-                Triple("gallery", "save", "chat_media_save_gallery"),
-                Triple("share", "share", "chat_media_share"),
-                Triple("delete", "delete", "chat_delete"),
-            )) {
-            val row =
-                LinearLayout(activity).apply {
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(18f), 0, dp(18f), 0)
-                    background = RippleDrawable(ColorStateList.valueOf(0x33ffffff), null, null)
-                }
-            row.addView(
-                ImageView(activity).apply {
-                    setImageDrawable(SteamChatMediaResources.drawable(context, icon))
-                },
-                LinearLayout.LayoutParams(dp(24f), dp(24f)),
-            )
-            row.addView(
-                TextView(activity).apply {
-                    text = label(key)
-                    textSize = 16f
-                    setTextColor(Color.WHITE)
-                },
-                LinearLayout.LayoutParams(-1, -2).apply { leftMargin = dp(18f) },
-            )
-            content.addView(row, LinearLayout.LayoutParams(-1, dp(48f)))
-            row.setOnClickListener {
-                popup.dismiss()
-                action(type)
-            }
-        }
-        popup.setOnDismissListener {
+        val entries = listOf(
+            SteamChatMediaMenu.Entry("gallery", "save", label("chat_media_save_gallery")),
+            SteamChatMediaMenu.Entry("share", "share", label("chat_media_share")),
+            SteamChatMediaMenu.Entry("delete", "delete", label("chat_delete")),
+        )
+        val popup = SteamChatMediaMenu(activity, entries, viewer = true) { selected ->
             menu = null
-            scheduleHide()
+            if (!closed && !closing) {
+                if (selected != null) action(selected) else scheduleHide()
+            }
         }
         menu = popup
-        popup.showAtLocation(root, Gravity.TOP or Gravity.END, dp(8f), dp(56f))
-        content.pivotX = dp(224f).toFloat()
-        content.pivotY = 0f
-        content.scaleY = .01f
-        content.alpha = 0f
-        content.animate().scaleY(1f).alpha(1f).setDuration(150).start()
+        popup.show(header)
     }
 
     private fun failure() {
@@ -1047,6 +1077,7 @@ internal class SteamChatMediaViewer(
         resumed = value
         stage.animateImage(value)
         if (!value) {
+            menu?.dismissImmediately()
             resumeAfterFocus = playing()
             if (prepared) player?.pause()
             main.removeCallbacks(hideBars)
@@ -1063,36 +1094,60 @@ internal class SteamChatMediaViewer(
         closing = true
         pause()
         stage.animateImage(false)
-        menu?.dismiss()
+        menu?.dismissImmediately()
         gestures.close()
         barsAnimator?.cancel()
         root.animate().cancel()
+        header.animate().cancel()
+        if (transition.reverseOpening { dismiss() }) return
         transition.cancel()
+        val fade = closingChrome()
         if (
             index == openingIndex &&
-                transition.run(
-                    root,
-                    stage,
-                    stage.currentBitmap,
-                    false,
-                    stage.fittedWidth / stage.fittedHeight,
-                    ::transitionChrome,
-                    stage.zoom,
-                    stage.offsetX,
-                    stage.offsetY,
-                ) {
-                    dismiss()
-                }
+            transition.run(
+                root,
+                stage,
+                stage.captureFrame(),
+                false,
+                fade,
+                stage.zoom,
+                stage.offsetX,
+                stage.offsetY,
+            ) {
+                dismiss()
+            }
         )
             return
-        root
-            .animate()
-            .alpha(0f)
-            .scaleX(.9f)
-            .scaleY(.9f)
-            .setDuration(200)
-            .withEndAction { dismiss() }
-            .start()
+        val stageAlpha = stage.alpha
+        closingAnimation = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 200
+            addUpdateListener {
+                val progress = it.animatedValue as Float
+                stage.alpha = stageAlpha * (1f - progress)
+                stage.scaleX = 1f - .1f * progress
+                stage.scaleY = 1f - .1f * progress
+                fade(1f - progress)
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) = dismiss()
+            })
+            start()
+        }
+    }
+
+    private fun closingChrome(): (Float) -> Unit {
+        val backdrop = root.background?.alpha ?: 255
+        val headerAlpha = header.alpha
+        val countAlpha = count.alpha
+        val controlsAlpha = controls.alpha
+        val captionAlpha = captionScroll.alpha
+        return { progress ->
+            root.setBackgroundColor((backdrop * progress).toInt().coerceIn(0, 255) shl 24)
+            header.alpha = headerAlpha * progress
+            count.alpha = countAlpha * progress
+            controls.alpha = controlsAlpha * progress
+            captionScroll.alpha = captionAlpha * progress
+        }
     }
 
     private fun transitionChrome(value: Float) {
@@ -1114,17 +1169,26 @@ internal class SteamChatMediaViewer(
         prepared = false
         player?.release()
         player = null
-        stage.texture.visibility = View.INVISIBLE
+        surface?.release()
+        surface = null
+        stage.resetVideo(recreate = !closed)
         buffering = false
     }
 
     private fun dispose() {
         if (closed) return
         closed = true
+        menu?.dismissImmediately()
         generation++
+        clearPendingImage()
         main.removeCallbacksAndMessages(null)
         barsAnimator?.cancel()
+        closingAnimation?.removeAllListeners()
+        closingAnimation?.removeAllUpdateListeners()
+        closingAnimation?.cancel()
+        closingAnimation = null
         root.animate().cancel()
+        header.animate().cancel()
         rewinder.stop()
         gestures.close()
         releasePlayer()
@@ -1145,7 +1209,16 @@ internal class SteamChatMediaViewer(
 
     private inner class Stage(context: Context) :
         FrameLayout(context), android.graphics.drawable.Drawable.Callback {
-        val texture = TextureView(context)
+        var texture = TextureView(context)
+            private set
+
+        var videoRendering = false
+        private var hasVideoFrame = false
+        private var videoAlpha = 0f
+        private var videoFade: ValueAnimator? = null
+        private var previousBitmap: Bitmap? = null
+        private var imageAlpha = 1f
+        private var imageFade: ValueAnimator? = null
         var currentBitmap: Bitmap? = null
             private set
 
@@ -1206,12 +1279,125 @@ internal class SteamChatMediaViewer(
             setWillNotDraw(false)
             addView(texture, LayoutParams(-1, -1))
             texture.isOpaque = false
+            texture.alpha = 0f
+            texture.visibility = INVISIBLE
+        }
+
+        fun resetVideo(recreate: Boolean) {
+            videoFade?.removeAllListeners()
+            videoFade?.removeAllUpdateListeners()
+            videoFade?.cancel()
+            videoFade = null
+            videoRendering = false
+            hasVideoFrame = false
+            videoAlpha = 0f
+            texture.alpha = 0f
+            if (recreate) {
+                val listener = texture.surfaceTextureListener
+                texture.surfaceTextureListener = null
+                removeView(texture)
+                texture = TextureView(context).apply {
+                    isOpaque = false
+                    alpha = 0f
+                    visibility = INVISIBLE
+                    surfaceTextureListener = listener
+                }
+                addView(texture, LayoutParams(-1, -1))
+            } else texture.visibility = INVISIBLE
+            invalidate()
+        }
+
+        fun onVideoFrame() {
+            hasVideoFrame = true
+            revealVideo()
+        }
+
+        fun revealVideo() {
+            if (opening || closing || closed || !videoRendering ||
+                videoAlpha == 1f || videoFade != null) return
+            videoFade = ValueAnimator.ofFloat(videoAlpha, 1f).apply {
+                duration = 200
+                interpolator = null
+                addUpdateListener {
+                    videoAlpha = it.animatedValue as Float
+                    transformVideo()
+                    invalidate()
+                }
+                start()
+            }
+        }
+
+        fun captureFrame(): Bitmap? {
+            if (videoRendering && hasVideoFrame && texture.isAvailable &&
+                videoWidth > 0 && videoHeight > 0) {
+                val transform = texture.getTransform(Matrix())
+                val scale = min(1f, 2048f / maxOf(videoWidth, videoHeight))
+                val frame = try {
+                    texture.setTransform(Matrix())
+                    texture.getBitmap(
+                        (videoWidth * scale).toInt().coerceAtLeast(1),
+                        (videoHeight * scale).toInt().coerceAtLeast(1),
+                    )
+                } catch (_: Exception) {
+                    null
+                } finally {
+                    texture.setTransform(transform)
+                }
+                if (frame != null) return frame
+            }
+            val bitmap = currentBitmap ?: return null
+            val frame = bitmap.copy(Bitmap.Config.ARGB_8888, true) ?: return null
+            animatedImage?.let { drawable ->
+                val bounds = Rect(drawable.bounds)
+                try {
+                    frame.eraseColor(Color.TRANSPARENT)
+                    drawable.setBounds(0, 0, frame.width, frame.height)
+                    drawable.draw(Canvas(frame))
+                } finally {
+                    drawable.bounds = bounds
+                }
+            }
+            return frame
         }
 
         fun bitmap(value: Bitmap?) {
+            imageFade?.removeAllListeners()
+            imageFade?.removeAllUpdateListeners()
+            imageFade?.cancel()
+            imageFade = null
+            previousBitmap?.recycle()
+            previousBitmap = null
+            imageAlpha = 1f
             if (currentBitmap !== value) currentBitmap?.recycle()
             currentBitmap = value
             invalidate()
+        }
+
+        fun decoded(value: Bitmap, drawable: android.graphics.drawable.Drawable?) {
+            val previous = currentBitmap
+            currentBitmap = null
+            bitmap(value)
+            animation(drawable)
+            if (previous == null) return
+            previousBitmap = previous
+            imageAlpha = 0f
+            imageFade = ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = 200
+                interpolator = null
+                addUpdateListener {
+                    imageAlpha = it.animatedValue as Float
+                    invalidate()
+                }
+                addListener(object : AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(animation: Animator) {
+                        previousBitmap?.recycle()
+                        previousBitmap = null
+                        imageFade = null
+                        invalidate()
+                    }
+                })
+                start()
+            }
         }
 
         fun transformVideo() {
@@ -1228,7 +1414,7 @@ internal class SteamChatMediaViewer(
             )
             matrix.postTranslate(if (left > 0f) limit else offsetX, offsetY)
             texture.setTransform(matrix)
-            texture.alpha = 1f - left
+            texture.alpha = videoAlpha * (1f - left)
         }
 
         override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -1246,41 +1432,54 @@ internal class SteamChatMediaViewer(
                     val progress = min(1f, (-limit - offsetX) / width)
                     drawNeighbor(canvas, it, width / 2f, 1f - (1f - progress) * .3f, progress)
                 }
+            if (videoAlpha < 1f) {
+                previousBitmap?.let { drawMedia(canvas, it, 1f, null) }
+                currentBitmap?.let { drawMedia(canvas, it, imageAlpha, animatedImage) }
+            }
+        }
+
+        private fun drawMedia(
+            canvas: Canvas,
+            bitmap: Bitmap,
+            alpha: Float,
+            animated: android.graphics.drawable.Drawable?,
+        ) {
+            val limit = maxOf(0f, (fittedWidth * zoom - width) / 2f)
             val leftProgress = if (offsetX > limit) min(1f, (offsetX - limit) / width) else 0f
-            currentBitmap?.let {
-                canvas.withTranslation(
-                    width / 2f + if (leftProgress > 0f) limit else offsetX,
-                    height / 2f + offsetY,
-                ) {
-                    canvas.scale(zoom - leftProgress * .3f, zoom - leftProgress * .3f)
-                    paint.alpha = ((1f - leftProgress) * 255).toInt()
-                    val animated = animatedImage
-                    if (animated == null)
-                        canvas.drawBitmap(
-                            it,
-                            null,
-                            bitmapBounds.apply {
-                                set(
-                                    -fittedWidth / 2,
-                                    -fittedHeight / 2,
-                                    fittedWidth / 2,
-                                    fittedHeight / 2,
-                                )
-                            },
-                            paint,
-                        )
-                    else {
-                        animated.setBounds(
-                            (-fittedWidth / 2).toInt(),
-                            (-fittedHeight / 2).toInt(),
-                            (fittedWidth / 2).toInt(),
-                            (fittedHeight / 2).toInt(),
-                        )
-                        animated.alpha = paint.alpha
-                        animated.draw(canvas)
-                    }
-                    paint.alpha = 255
+            val fitted = min(width.toFloat() / bitmap.width, height.toFloat() / bitmap.height)
+            val mediaWidth = bitmap.width * fitted
+            val mediaHeight = bitmap.height * fitted
+            canvas.withTranslation(
+                width / 2f + if (leftProgress > 0f) limit else offsetX,
+                height / 2f + offsetY,
+            ) {
+                canvas.scale(zoom - leftProgress * .3f, zoom - leftProgress * .3f)
+                paint.alpha = ((1f - leftProgress) * alpha * 255).toInt()
+                if (animated == null)
+                    canvas.drawBitmap(
+                        bitmap,
+                        null,
+                        bitmapBounds.apply {
+                            set(
+                                -mediaWidth / 2,
+                                -mediaHeight / 2,
+                                mediaWidth / 2,
+                                mediaHeight / 2,
+                            )
+                        },
+                        paint,
+                    )
+                else {
+                    animated.setBounds(
+                        (-mediaWidth / 2).toInt(),
+                        (-mediaHeight / 2).toInt(),
+                        (mediaWidth / 2).toInt(),
+                        (mediaHeight / 2).toInt(),
+                    )
+                    animated.alpha = paint.alpha
+                    animated.draw(canvas)
                 }
+                paint.alpha = 255
             }
         }
 
