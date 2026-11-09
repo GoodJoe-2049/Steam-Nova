@@ -514,4 +514,11 @@
     <string name="chat_media_delete_local">"仅从本机移除此消息？其他设备和对方的消息仍会保留"</string>
     <string name="chat_media_search">"搜索会话"</string>
     <string name="chat_media_send">"发送"</string>
+    <string name="chat_trade_accepting">"%1$s 正在接受交易"</string>
+    <string name="chat_trade_url_label">"交易请求 URL："</string>
+    <string name="chat_trade_received">"%1$s 向您发送了一个新的交易请求"</string>
+    <string name="chat_trade_sent">"您向 %1$s 发送了一个新的交易请求"</string>
+    <string name="chat_trade_send">"发送交易请求"</string>
+    <string name="chat_trade_view">"查看交易请求"</string>
+    <string name="chat_trade_copy">"复制至剪贴板"</string>
 </resources>

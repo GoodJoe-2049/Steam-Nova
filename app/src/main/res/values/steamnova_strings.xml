@@ -526,4 +526,11 @@
     <string name="chat_media_delete_local">"Remove this message from this device? It will remain on other devices and for the recipient."</string>
     <string name="chat_media_search">"Search conversations"</string>
     <string name="chat_media_send">"Send"</string>
+    <string name="chat_trade_accepting">"%1$s is accepting trades"</string>
+    <string name="chat_trade_url_label">"Trade Offer URL:"</string>
+    <string name="chat_trade_received">"%1$s sent you a new trade offer"</string>
+    <string name="chat_trade_sent">"You sent %1$s a new trade offer"</string>
+    <string name="chat_trade_send">"Send trade offer"</string>
+    <string name="chat_trade_view">"View trade offer"</string>
+    <string name="chat_trade_copy">"Copy to clipboard"</string>
 </resources>

@@ -3,7 +3,7 @@ package steam.nova.app.features.chat.ui
 internal object SteamChatMediaScript {
     fun source() = """
     function chatMedia(env,ui){
-        var R=env.React,N=env.RN,h=R.createElement,t=ui.t,label=ui.label,Button=ui.Button,colors=ui.colors,presentation=chatMediaPresentation(env,ui);
+        var R=env.React,N=env.RN,h=R.createElement,t=ui.t,label=ui.label,Button=ui.Button,colors=ui.colors,presentation=chatMediaPresentation(env,ui),trades=chatTradeCards(env,ui);
         function safe(url){return /^https:\/\/(?:[a-z0-9-]+\.)*(?:steamusercontent\.com|steamcontent\.com|steamstatic\.com|akamaihd\.net|steamcommunity\.com)\//i.test(url)?url:null;}
         function openLink(url){if(/^https?:\/\/[^\s<>]+$/i.test(url))N.Linking.openURL(url).catch(function(){});}
         function attrs(raw){var result={},re=/([a-z_]+)=(?:"([^"]*)"|'([^']*)'|([^\s\]]+))/gi,m;while((m=re.exec(raw||''))!==null)result[m[1].toLowerCase()]=(m[2]||m[3]||m[4]||'').replace(/&amp;/g,'&');return result;}
@@ -69,6 +69,10 @@ internal object SteamChatMediaScript {
             function richLabel(value,style,options){return props.detail?chatThreadAppearance(env,ui).text(value,Object.assign({},style||{},{fontSize:16,lineHeight:24,letterSpacing:0.5}),options):label(value,style,options);}
             if((props.depth||0)>8)return richLabel(body,{lineHeight:22},{selectable:true});
             if((m=/^\[spoiler(?:=[^\]]+)?\]([\s\S]*)\[\/spoiler\]$/i.exec(body.trim())))return h(Spoiler,Object.assign({},props,{text:m[1],depth:(props.depth||0)+1}));
+            var tradeParts=!props.tradeParsed&&trades.parse(body,props);
+            if(tradeParts)return h(N.View,{style:{minWidth:0}},tradeParts.map(function(part,index){return part.trade?
+                h(trades.Card,{key:'trade'+index,trade:part.trade}):
+                part.text.trim()?h(RichText,Object.assign({},props,{key:'tradeText'+index,text:part.text,tradeParsed:true})):null;}));
             var mediaParts=!props.mediaParsed&&presentation.parse(body);
             if(mediaParts)return h(N.View,{style:{minWidth:0}},mediaParts.map(function(part,index){return part.url?
                 h(presentation.Card,{key:'media'+index,media:part,item:props.item,target:props.target,profile:props.profile,active:props.active,open:props.open}):

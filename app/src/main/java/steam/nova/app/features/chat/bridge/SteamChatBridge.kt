@@ -6,6 +6,7 @@ import android.app.Application
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.os.Bundle
+import steam.nova.app.features.chat.ui.SteamChatTradeScript
 import steam.nova.app.features.chat.ui.SteamChatThreadFonts
 import steam.nova.app.features.chat.runtime.SteamChatRuntime
 import android.content.Context
@@ -185,6 +186,10 @@ internal object SteamChatBridge {
                     }
                     "chatFonts" -> appearance.execute {
                         runCatching { SteamChatThreadFonts.load(app, loader) }
+                            .fold({ complete(success(it)) }, { complete(failure(it)) })
+                    }
+                    "tradeUrlField" -> main.post {
+                        runCatching { SteamChatTradeScript.configureUrlField(currentActivity, args) }
                             .fold({ complete(success(it)) }, { complete(failure(it)) })
                     }
                     "copy" -> main.post {

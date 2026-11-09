@@ -10,6 +10,13 @@ import java.util.Locale
 internal object ModuleScriptLocalization {
     // Explicit resource references keep these entries reachable when shrinking resources.
     private val strings = mapOf(
+        "chat_trade_accepting" to R.string.chat_trade_accepting,
+        "chat_trade_url_label" to R.string.chat_trade_url_label,
+        "chat_trade_received" to R.string.chat_trade_received,
+        "chat_trade_sent" to R.string.chat_trade_sent,
+        "chat_trade_send" to R.string.chat_trade_send,
+        "chat_trade_view" to R.string.chat_trade_view,
+        "chat_trade_copy" to R.string.chat_trade_copy,
         "chat_voice_settings" to R.string.chat_voice_settings,
         "chat_voice_end_chat" to R.string.chat_voice_end_chat,
         "chat_voice_stop_talking" to R.string.chat_voice_stop_talking,

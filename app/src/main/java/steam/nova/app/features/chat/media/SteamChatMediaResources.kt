@@ -18,8 +18,8 @@ internal object SteamChatMediaResources {
     private val ids = mapOf(
         "back" to R.drawable.chat_media_ic_ab_back,
         "more" to R.drawable.chat_media_media_more,
-        "forward" to R.drawable.chat_media_msg_forward,
-        "headerForward" to R.drawable.chat_media_msg_header_share,
+        "forward" to R.drawable.chat_media_msg_forward_noquote,
+        "headerForward" to R.drawable.chat_media_msg_forward_noquote,
         "copy" to R.drawable.chat_media_msg_link,
         "save" to R.drawable.chat_media_msg_gallery,
         "download" to R.drawable.chat_media_msg_download,
