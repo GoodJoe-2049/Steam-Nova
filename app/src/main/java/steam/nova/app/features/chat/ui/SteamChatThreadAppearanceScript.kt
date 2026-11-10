@@ -111,18 +111,18 @@ internal object SteamChatThreadAppearanceScript {
                 h(N.Pressable,{onLongPress:props.menu,delayLongPress:350,accessibilityLabel:t('chat_chat_message'),accessibilityActions:[{name:'activate',label:t('chat_message_actions')}],onAccessibilityAction:props.menu,
                     style:{paddingLeft:32,marginRight:14,paddingTop:first?10:7,paddingBottom:last?9:7,marginBottom:3}},props.children));
         }
-        function Composer(props){var compact=N.useWindowDimensions().width<380,button=compact?42:48;return h(N.View,{onLayout:props.onLayout,style:{backgroundColor:'#22252b',borderTopWidth:1,borderTopColor:'#15181c',paddingHorizontal:compact?6:10,paddingVertical:8,flexDirection:'row',alignItems:'flex-end',
+        function Composer(props){var compact=N.useWindowDimensions().width<380,button=compact?42:48,motion=chatComposer(env,props);return h(N.View,{testID:motion.owner+'.panel',collapsable:false,onLayout:props.onLayout,style:{backgroundColor:'#22252b',borderTopLeftRadius:8,borderTopRightRadius:8,borderTopWidth:1,borderTopColor:'#15181c',paddingHorizontal:compact?6:10,paddingTop:8,paddingBottom:8+motion.bottomInset,flexDirection:'row',alignItems:'flex-end',
             boxShadow:Number(N.Platform.Version)>=28?[{offsetX:0,offsetY:-3,blurRadius:12,color:'rgba(0,0,0,0.1333)'}]:undefined}},
-            h(Shadow),h(IconButton,{name:'attachments',title:t('chat_send_special_content'),box:true,style:{width:button,marginRight:8,marginBottom:2},onPress:props.attach,onLongPress:props.file,disabled:props.busy,expanded:props.attachOpen}),
-            h(N.View,{style:{flex:1,minWidth:0,flexDirection:'row',alignItems:'flex-end',backgroundColor:'#1b1c20',
+            h(Shadow),h(IconButton,{name:'attachments',title:t('chat_send_special_content'),box:true,style:{width:button,marginRight:8,marginBottom:2,borderRadius:8,overflow:'hidden'},onPress:props.attach,onLongPress:props.file,disabled:props.busy,expanded:props.attachOpen}),
+            h(N.View,{style:{flex:1,minWidth:0,flexDirection:'row',alignItems:'flex-end',backgroundColor:'#1b1c20',borderRadius:8,overflow:'hidden',
                 boxShadow:Number(N.Platform.Version)>=29?[{inset:true,offsetX:0,offsetY:0,blurRadius:4,color:'#000000'}]:undefined}},
-                h(N.View,{style:{flex:1,minWidth:0,minHeight:52,maxHeight:144}},
-                    h(N.TextInput,{ref:props.input,value:props.draft,onChangeText:props.edit,multiline:true,maxLength:2000,underlineColorAndroid:'transparent',
-                        onFocus:props.close,onContentSizeChange:props.resize,accessibilityLabel:t('chat_message_input'),
-                        style:{height:props.height,minHeight:52,maxHeight:144,fontFamily:(env.threadFonts||{}).regular||'sans-serif',fontSize:16,lineHeight:24,color:'#aaaaaa',
-                            paddingLeft:compact?8:16,paddingRight:compact?44:56,paddingVertical:14,includeFontPadding:false,textAlignVertical:'center'}}),
-                    h(IconButton,{name:'emoticons',title:t('chat_emotes'),expanded:props.pickerOpen,style:{position:'absolute',right:4,bottom:2,width:compact?40:48},onPress:props.emotes})),
-                h(IconButton,{name:'send_message',title:t('chat_send'),send:true,box:true,style:{width:button,marginLeft:8,marginBottom:2},onPress:props.send,disabled:!props.draft.trim()||props.busy}),h(Shadow,{inset:true})),
+                h(N.Animated.View,{style:{flex:1,minWidth:0,height:motion.height,overflow:'hidden'}},
+                    h(N.TextInput,{ref:props.input,testID:motion.owner,collapsable:false,value:props.draft,onChangeText:props.edit,multiline:true,maxLength:2000,underlineColorAndroid:'transparent',allowFontScaling:false,
+                        onFocus:props.close,onLayout:motion.layout,accessibilityLabel:t('chat_message_input'),
+                        style:{position:'absolute',left:0,right:0,bottom:0,height:motion.fieldHeight,minHeight:44,borderRadius:8,fontFamily:(env.threadFonts||{}).regular||'sans-serif',fontSize:18,color:'#aaaaaa',
+                            paddingLeft:compact?8:16,paddingRight:compact?44:56,paddingTop:9,paddingBottom:10,includeFontPadding:false,textAlignVertical:'bottom'}}),
+                    h(IconButton,{name:'emoticons',title:t('chat_emotes'),expanded:props.pickerOpen,style:{position:'absolute',right:4,bottom:2,width:compact?40:48,borderRadius:8},onPress:props.emotes})),
+                h(IconButton,{name:'send_message',title:t('chat_send'),send:true,box:true,style:{width:button,marginLeft:8,marginRight:2,marginBottom:2,borderRadius:8,overflow:'hidden'},onPress:props.send,disabled:!props.draft.trim()||props.busy}),h(Shadow,{inset:true})),
             h(chatVoiceUi(env).Dock,{target:props.target}));}
         function Popover(props){var height=R.useState(1),opacity=R.useRef(new N.Animated.Value(0)).current;
             R.useEffect(function(){var live=true,animation;

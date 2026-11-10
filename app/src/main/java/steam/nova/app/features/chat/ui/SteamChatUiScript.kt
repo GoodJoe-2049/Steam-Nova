@@ -62,7 +62,7 @@ internal object SteamChatUiScript {
             var draft=R.useState(data.draft||''),picker=R.useState(false),attachment=R.useState(null),busy=R.useState(false),error=R.useState(''),viewer=R.useState(null);
             var menu=R.useState(null),info=R.useState(false),admin=R.useState(false),spoiler=R.useState(false),progress=R.useState(0);
             var nearBottom=R.useRef(true),mounted=R.useRef(true),focused=require(1366).useIsFocused(),list=R.useRef(null),restored=R.useRef(false),jump=R.useRef(null),progressTimer=R.useRef(null),uncertain=R.useRef(false);
-            var input=R.useRef(null),inputHeight=R.useState(52),attachMenu=R.useState(false),createGroup=R.useState(false),composerHeight=R.useState(69);
+            var input=R.useRef(null),attachMenu=R.useState(false),createGroup=R.useState(false),composerHeight=R.useRef(69),composerLayout=R.useState(69);
             var restoreReady=R.useState(false),restorePending=R.useRef(''),restoreIssued=R.useRef(false),restoreTimer=R.useRef(null);
             var visibleMedia=R.useState({}),viewableIds=R.useRef('');
             var scroll=chatScrollControl(env,{target:target,data:data,focused:focused,ready:restoreReady[0],list:list,nearBottom:nearBottom,syncRevision:state.syncRevision,
@@ -155,12 +155,11 @@ internal object SteamChatUiScript {
                         h(Button,{title:busy[0]?String(progress[0])+'%':t('chat_send_attachment'),primary:true,disabled:busy[0],onPress:upload}),
                         h(Button,{title:t('chat_cancel'),disabled:busy[0],onPress:function(){attachment[1](null);}})),
                     h(actions.SwitchRow,{title:t('chat_mark_as_spoiler'),value:spoiler[0],disabled:busy[0],onChange:spoiler[1]})):null,
-                h(skin.Composer,{target:target,input:input,draft:draft[0],edit:edit,height:inputHeight[0],busy:busy[0],send:send,close:closePopup,pickerOpen:picker[0],attachOpen:attachMenu[0],
-                    onLayout:function(e){composerHeight[1](e.nativeEvent.layout.height);},file:function(){pick('pickFile');},
-                    resize:function(e){inputHeight[1](Math.max(52,Math.min(144,e.nativeEvent.contentSize.height)));},
+                h(skin.Composer,{key:state.account+':'+target.key,target:target,input:input,draft:draft[0],edit:edit,busy:busy[0],send:send,close:closePopup,pickerOpen:picker[0],attachOpen:attachMenu[0],
+                    onLayout:function(e){composerHeight.current=e.nativeEvent.layout.height;if(attachMenu[0]||picker[0])composerLayout[1](composerHeight.current);},file:function(){pick('pickFile');},
                     attach:function(){if(input.current)input.current.blur();N.Keyboard.dismiss();picker[1](false);attachMenu[1](!attachMenu[0]);},
                     emotes:function(){if(input.current)input.current.blur();N.Keyboard.dismiss();attachMenu[1](false);picker[1](!picker[0]);}}),
-                attachMenu[0]||picker[0]?h(skin.Popover,{bottom:composerHeight[0],wide:picker[0],close:closePopup},
+                attachMenu[0]||picker[0]?h(skin.Popover,{bottom:composerHeight.current,wide:picker[0],close:closePopup},
                     picker[0]?h(skin.Catalog,{choose:function(code,kind){closePopup();if(kind==='effects'){
                         env.send(target,code).then(function(sent){if(sent)env.load('catalog',true).catch(function(){});});env.editDraft(target,draft[0]);latest();
                     }else edit(/^\/sticker /.test(code)?code:draft[0]+code);}}):h(skin.AttachmentMenu,{pick:pick,trade:shareTrade})):null,

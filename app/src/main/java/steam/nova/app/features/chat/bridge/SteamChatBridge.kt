@@ -1,5 +1,6 @@
 package steam.nova.app.features.chat.bridge
 
+import steam.nova.app.features.chat.linkpreview.SteamChatLinkPreviewBridge
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Application
@@ -8,6 +9,7 @@ import android.content.ClipboardManager
 import android.os.Bundle
 import steam.nova.app.features.chat.ui.SteamChatTradeScript
 import steam.nova.app.features.chat.ui.SteamChatThreadFonts
+import steam.nova.app.features.chat.ui.SteamChatComposer
 import steam.nova.app.features.chat.runtime.SteamChatRuntime
 import android.content.Context
 import android.content.Intent
@@ -122,7 +124,7 @@ internal object SteamChatBridge {
                 if (!SteamModuleSettings.isBuiltInChatEnabled(app)) {
                     synchronized(lock) {
                         attachments?.clear()
-                        mediaTransfer?.clear(); SteamChatMediaViewerBridge.clear(); SteamChatMediaIconBridge.clear(); SteamChatMediaMenuBridge.clear()
+                        mediaTransfer?.clear(); SteamChatMediaViewerBridge.clear(); SteamChatMediaIconBridge.clear(); SteamChatMediaMenuBridge.clear(); SteamChatLinkPreviewBridge.clear(); SteamChatComposer.clear()
                         runtime?.stop(); activeAccount = null; notificationTarget = null; SteamChatRoomEffects.clear(); SteamChatScrollBridge.clear()
                     }
                     throw SteamChatFailure("DISABLED")
@@ -146,6 +148,20 @@ internal object SteamChatBridge {
                 }.getOrNull()
                 if (currentActivity != null) main.post { watchNotificationIntent(module, currentActivity) }
                 when (operation) {
+                    "chatComposer" -> {
+                        val reactContext = requireNotNull(getReactContext.invoke(chain.thisObject))
+                        SteamChatComposer.handle(currentActivity, reactContext, args,
+                            { synchronized(lock) { epochAccount == account && latestEpoch == epoch } }) { result ->
+                            result.fold({ complete(success(it)) }, { complete(failure(it)) })
+                        }
+                    }
+                    "linkPreview" -> {
+                        val reactContext = requireNotNull(getReactContext.invoke(chain.thisObject))
+                        SteamChatLinkPreviewBridge.handle(currentActivity, reactContext, args,
+                            { synchronized(lock) { epochAccount == account && latestEpoch == epoch } }) { result ->
+                            result.fold({ complete(success(it)) }, { complete(failure(it)) })
+                        }
+                    }
                     "mediaMenu" -> {
                         val reactContext = requireNotNull(getReactContext.invoke(chain.thisObject))
                         SteamChatMediaMenuBridge.handle(currentActivity, reactContext, args) { result ->
@@ -252,7 +268,7 @@ internal object SteamChatBridge {
                     val active = activeAccount
                     if (active != null && runCatching { SteamChatAccount.current(active.id) == active }.getOrDefault(false).not()) {
                         activeAccount = null; attachments?.clear(); notificationTarget = null
-                        mediaTransfer?.clear(); SteamChatMediaViewerBridge.clear(); SteamChatMediaIconBridge.clear(); SteamChatMediaMenuBridge.clear()
+                        mediaTransfer?.clear(); SteamChatMediaViewerBridge.clear(); SteamChatMediaIconBridge.clear(); SteamChatMediaMenuBridge.clear(); SteamChatLinkPreviewBridge.clear(); SteamChatComposer.clear()
                         runtime?.stop(); SteamChatRoomEffects.clear(); SteamChatScrollBridge.clear()
                     }
                     picker?.let { pending ->
@@ -268,7 +284,7 @@ internal object SteamChatBridge {
 
     private fun current(context: Context, account: String): SteamChatAccount = synchronized(lock) {
         val active = SteamChatAccount.current(account)
-        if (activeAccount != active) { attachments?.clear(); mediaTransfer?.clear(active.id); SteamChatMediaViewerBridge.clear(active.id); SteamChatMediaIconBridge.clear(active.id); SteamChatMediaMenuBridge.clear(active.id); runtime?.stop(); SteamChatRoomEffects.clearOtherAccounts(active.id); SteamChatScrollBridge.clear(active.id); activeAccount = active }
+        if (activeAccount != active) { attachments?.clear(); mediaTransfer?.clear(active.id); SteamChatMediaViewerBridge.clear(active.id); SteamChatMediaIconBridge.clear(active.id); SteamChatMediaMenuBridge.clear(active.id); SteamChatLinkPreviewBridge.clear(active.id); SteamChatComposer.clear(active.id); runtime?.stop(); SteamChatRoomEffects.clearOtherAccounts(active.id); SteamChatScrollBridge.clear(active.id); activeAccount = active }
         if (attachments == null) attachments = SteamChatAttachments(context.applicationContext)
         if (mediaTransfer == null) mediaTransfer = SteamChatMediaTransfer(context.applicationContext)
         if (runtime == null) runtime = SteamChatRuntime(context.applicationContext)
@@ -304,6 +320,7 @@ internal object SteamChatBridge {
             private val started = java.util.Collections.newSetFromMap(WeakHashMap<Activity, Boolean>())
             override fun onActivityResumed(activity: Activity) {
                 SteamChatMediaViewerBridge.foreground(activity, true)
+                SteamChatLinkPreviewBridge.foreground(activity, true)
                 started.add(activity)
                 runtime?.voiceForeground(true)
                 watchNotificationIntent(module, activity)
@@ -313,13 +330,13 @@ internal object SteamChatBridge {
                 started.add(activity)
                 runtime?.voiceForeground(true)
             }
-            override fun onActivityPaused(activity: Activity) { SteamChatMediaViewerBridge.foreground(activity, false); SteamChatMediaMenuBridge.clearActivity(activity) }
+            override fun onActivityPaused(activity: Activity) { SteamChatMediaViewerBridge.foreground(activity, false); SteamChatLinkPreviewBridge.foreground(activity, false); SteamChatMediaMenuBridge.clearActivity(activity) }
             override fun onActivityStopped(activity: Activity) {
                 started.remove(activity)
                 if (started.isEmpty()) runtime?.voiceForeground(false)
             }
             override fun onActivitySaveInstanceState(activity: Activity, state: Bundle) = Unit
-            override fun onActivityDestroyed(activity: Activity) { SteamChatScrollBridge.clearActivity(activity); SteamChatMediaViewerBridge.clearActivity(activity); SteamChatMediaMenuBridge.clearActivity(activity) }
+            override fun onActivityDestroyed(activity: Activity) { SteamChatComposer.clearActivity(activity); SteamChatLinkPreviewBridge.clearActivity(activity); SteamChatScrollBridge.clearActivity(activity); SteamChatMediaViewerBridge.clearActivity(activity); SteamChatMediaMenuBridge.clearActivity(activity) }
         })
         lifecycleInstalled = true
     }

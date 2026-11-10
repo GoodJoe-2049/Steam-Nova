@@ -1,0 +1,62 @@
+{
+  "provider": "spotify",
+  "version": 1,
+  "name": "Spotify",
+  "hosts": ["open.spotify.com"],
+  "externalSchemes": ["spotify"],
+  "pauseMessage": {"command": "pause"},
+  "types": [
+    {
+      "kind": "track",
+      "idPattern": "[A-Za-z0-9]{22}",
+      "routes": [{"path": "^/(?:intl-[a-zA-Z-]+/)?(?:embed/)?track/([A-Za-z0-9]{22})/?$", "idGroup": 1}],
+      "canonicalPath": "/track/{id}",
+      "embed": {
+        "origin": "https://open.spotify.com",
+        "path": "/embed/track/{id}",
+        "query": {"utm_source": "oembed"},
+        "layout": {"mode": "fixedHeight", "height": 152, "radius": 12},
+        "allow": ["clipboard-write", "encrypted-media", "fullscreen", "picture-in-picture"]
+      }
+    },
+    {
+      "kind": "playlist",
+      "idPattern": "[A-Za-z0-9]{22}",
+      "routes": [{"path": "^/(?:intl-[a-zA-Z-]+/)?(?:embed/)?playlist/([A-Za-z0-9]{22})/?$", "idGroup": 1}],
+      "canonicalPath": "/playlist/{id}",
+      "embed": {
+        "origin": "https://open.spotify.com",
+        "path": "/embed/playlist/{id}",
+        "query": {"utm_source": "oembed"},
+        "layout": {"mode": "fixedHeight", "height": 152, "radius": 12},
+        "allow": ["clipboard-write", "encrypted-media", "fullscreen", "picture-in-picture"]
+      }
+    },
+    {
+      "kind": "artist",
+      "idPattern": "[A-Za-z0-9]{22}",
+      "routes": [{"path": "^/(?:intl-[a-zA-Z-]+/)?(?:embed/)?artist/([A-Za-z0-9]{22})/?$", "idGroup": 1}],
+      "canonicalPath": "/artist/{id}",
+      "embed": {
+        "origin": "https://open.spotify.com",
+        "path": "/embed/artist/{id}",
+        "query": {"utm_source": "oembed"},
+        "layout": {"mode": "fixedHeight", "height": 152, "radius": 12},
+        "allow": ["clipboard-write", "encrypted-media", "fullscreen", "picture-in-picture"]
+      }
+    },
+    {
+      "kind": "album",
+      "idPattern": "[A-Za-z0-9]{22}",
+      "routes": [{"path": "^/(?:intl-[a-zA-Z-]+/)?(?:embed/)?album/([A-Za-z0-9]{22})/?$", "idGroup": 1}],
+      "canonicalPath": "/album/{id}",
+      "embed": {
+        "origin": "https://open.spotify.com",
+        "path": "/embed/album/{id}",
+        "query": {"utm_source": "oembed"},
+        "layout": {"mode": "fixedHeight", "height": 152, "radius": 12},
+        "allow": ["clipboard-write", "encrypted-media", "fullscreen", "picture-in-picture"]
+      }
+    }
+  ]
+}

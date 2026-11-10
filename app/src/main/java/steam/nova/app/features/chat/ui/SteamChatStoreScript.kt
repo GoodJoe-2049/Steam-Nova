@@ -175,6 +175,7 @@ internal object SteamChatStoreScript {
             return data.historyPromise;
         }
         function send(target,text){
+            text=chatLinkPreviewOutgoing(text);
             var id=state.account,data=thread(target),local='local:'+Date.now()+':'+Math.random();
             var item={key:target.key,id:local,sender:id,profile:state.self||{id:id},text:text,timestamp:Math.floor(Date.now()/1000),ordinal:2147483647,pending:true};
             merge(target,[item]);editDraft(target,'');emit();

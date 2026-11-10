@@ -237,11 +237,19 @@ internal class SteamChatRepository(
         val target = Target.parse(args)
         val text = args.getString("text").trim()
         require(text.isNotBlank() && text.toByteArray().size <= 8000)
+        val plainUrls = text.split(Regex("\\s+")).all { value ->
+            val uri = value.toUri()
+            uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank() &&
+                    value.none { it == '<' || it == '>' || it == '[' || it == ']' || it == '\\' }
+        }
+        val wireText = if (plainUrls) text else text.replace("[", "\\[")
         val request = if (target.peer != null) P.Writer().fixed64(1, target.peer.toLong()).number(2, 1)
-            .text(3, text.replace("[", "\\[")).number(4, 1).number(5, 1)
-        else target.writer().text(3, text.replace("[", "\\[")).number(4, 1)
+            .text(3, wireText).number(4, if (plainUrls) 0 else 1).number(5, 1)
+        else target.writer().text(3, wireText).number(4, 1)
         // Sending is never retried automatically: a lost reply does not mean the message was not delivered.
         val fields = call(if (target.peer != null) "FriendMessages.SendMessage" else "ChatRoom.SendChatMessage", request)
+        if (plainUrls) SteamChatDiagnostics.info("send.url.result",
+            "plainText=${target.peer != null} expanded=${fields.text(1).contains("[oembed", ignoreCase = true)}")
         return message(target.key, account.id, fields.number(2), fields.number(3), fields.text(1).ifBlank { text })
             .put("profile", profile(account.id))
     }

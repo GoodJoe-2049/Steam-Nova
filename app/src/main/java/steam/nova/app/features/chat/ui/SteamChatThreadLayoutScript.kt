@@ -8,30 +8,26 @@ internal object SteamChatThreadLayoutScript {
         var R=env.React,N=env.RN,h=R.createElement;
         function ThreadHeader(props){return h(chatThreadAppearance(env,components).Header,props);}
         function KeyboardViewport(props){
-            var insets=env.require(1486).useSafeAreaInsets(),focused=env.require(1366).useIsFocused();
+            var focused=env.require(1366).useIsFocused();
             var owner=R.useRef('chat-ime-'+Math.random().toString(36).slice(2)+Date.now().toString(36)).current;
-            var metrics=N.Keyboard.metrics?N.Keyboard.metrics():null;
-            var ime=R.useState(!!(metrics&&metrics.height>0));
             R.useEffect(function(){
                 if(!focused)return;
                 env.request('chatIme',{enabled:true,owner:owner}).catch(function(){});
                 return function(){env.request('chatIme',{enabled:false,owner:owner}).catch(function(){});};
             },[focused,owner]);
             R.useEffect(function(){
-                function change(isVisible,event){
+                function change(event){
                     if(event&&event.duration>0&&N.Keyboard.scheduleLayoutAnimation)N.Keyboard.scheduleLayoutAnimation(event);
-                    ime[1](isVisible);
                 }
-                var subscriptions=[N.Keyboard.addListener('keyboardWillShow',function(event){change(true,event);}),
-                    N.Keyboard.addListener('keyboardWillHide',function(event){change(false,event);}),
-                    N.Keyboard.addListener('keyboardDidShow',function(event){change(true,event);}),
-                    N.Keyboard.addListener('keyboardDidHide',function(event){change(false,event);})];
+                var subscriptions=[N.Keyboard.addListener('keyboardWillShow',change),
+                    N.Keyboard.addListener('keyboardWillHide',change),
+                    N.Keyboard.addListener('keyboardDidShow',change),
+                    N.Keyboard.addListener('keyboardDidHide',change)];
                 return function(){subscriptions.forEach(function(subscription){subscription.remove();});};
             },[]);
-            // Monica's root uses imePadding(): the keyboard owns the bottom inset,
-            // while the stable safe-area inset is applied only when the IME is hidden.
+            // The composer owns only the native bottom inset still overlapping this viewport.
             return h(N.KeyboardAvoidingView,{style:{flex:1},behavior:'padding',enabled:focused,keyboardVerticalOffset:0},
-                h(N.View,{style:{flex:1,paddingBottom:ime[0]?0:insets.bottom}},props.children));
+                h(N.View,{collapsable:false,style:{flex:1}},props.children));
         }
         function useTransitionOptions(){
             var reduced=R.useState(false);
